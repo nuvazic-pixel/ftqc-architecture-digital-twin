@@ -17,7 +17,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["simulator"]
+packages = ["simulator", "metrics", "experiments"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
