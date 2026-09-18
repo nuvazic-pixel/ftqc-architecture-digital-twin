@@ -2,9 +2,9 @@
 
 A reproducible simulator for fault-tolerant quantum-computing (FTQC) architecture co-design.
 
-## Current baseline
+## Historical regression baseline
 
-The current regression baseline retains:
+The original regression fixture remains frozen and reproducible:
 
 ```text
 p_2q = 1e-3
@@ -13,77 +13,99 @@ A = 0.1
 p_L,target = 1e-12
 => d = 21
 
-r_T(21) = 60.47 states/s/factory
-zeta = 3
+legacy r_T(21) = 60.47 states/s/factory
+legacy zeta = 3
 T_count = 10,000,000
 T_wall,target = 3600 s
-=> N_fac,min = 138
+=> legacy N_fac,min = 138
 ```
 
-## Milestone 4: provenance-aware whole-machine accounting
+These values remain regression fixtures and are not silently rewritten by later
+protocol-specific models.
 
-The resource account now distinguishes between known terms and genuinely
-unmodeled terms. Missing required terms are **never converted to zero**.
+## Protocol-consistent Litinski benchmark
 
-For the p=1e-3 baseline, the factory geometry is anchored to the compact
-116-to-12 layout described by Daniel Litinski in *A Game of Surface Codes:
-Large-Scale Quantum Computing with Lattice Surgery*, Quantum 3, 128 (2019).
-
-That layout uses 44 distillation tiles and, in the cited minimal setup,
-13 output-storage tiles. A surface-code tile is modeled with the common
-approximately `2 d^2` physical-qubit scaling.
-
-At d=21:
+Milestone 5 adds a separate named benchmark instead of mutating the historical
+baseline:
 
 ```text
-data-block lower bound       88,200
-138 x factory distillation 5,355,504
-138 x output storage       1,582,308
-------------------------------------
-known subtotal             7,026,012 physical qubits
+configs/litinski_minimal_10mT.yaml
 ```
 
-Routing ancillas and lattice-surgery workspace remain explicitly
-`unmodeled`, therefore:
+The benchmark adapts the minimal p=1e-3 setup from Daniel Litinski,
+*A Game of Surface Codes* (Quantum 3, 128, 2019) to the repository's
+10,000,000-T-state workload.
+
+Named layout and protocol inputs:
 
 ```text
-total_physical_qubits = incomplete
-accounting_complete   = false
+compact data block       153 tiles
+116-to-12 distillation    44 tiles
+output storage            13 tiles
+total                    210 tiles
+
+batch outputs              12 states
+batch duration             99 logical time steps
+batch success              0.89
+code-cycle benchmark        1 microsecond
 ```
 
-This is intentional. The simulator reports a known subtotal rather than
-misrepresenting missing architecture costs as zero.
+The protocol-derived expected production interval is
 
-### Important protocol-consistency guardrail
+```text
+99 / (12 * 0.89) ~= 9.26966 logical time steps / usable state
+```
 
-The current `r_T(d)` throughput values are regression fixtures marked
-`model_derived`. They have **not yet been derived from the Litinski
-116-to-12 timing model**. Consequently, Milestone 4 labels the throughput
-binding as `unverified`.
+and one logical time step is modeled as `d` code cycles.
 
-The known-subtotal STV is useful for regression and sensitivity analysis,
-but it is not yet a publication-ready whole-machine STV until geometry,
-timing, routing, and factory protocol are made mutually consistent.
+### Whole-computation reliability
 
-## Research direction
+This benchmark does not select distance from the old per-cycle target alone.
+It applies the tile/time reliability budget used by the named architecture:
 
-The longer-term goal is an adaptive digital twin that co-optimizes:
+```text
+N_tiles * N_time_steps * d * p_L(p,d) <= 0.01
+```
 
-- code distance
-- magic-state factory provisioning
-- topology-aware routing
-- physical-qubit footprint
-- runtime
-- space-time volume
+For T_count=10,000,000 and p=1e-3:
 
-under a fixed logical reliability constraint.
+```text
+d = 23 -> estimated logical-failure budget ~= 0.04477  (fails)
+d = 25 -> estimated logical-failure budget ~= 0.00487  (passes)
+```
 
-## Reproducibility
+Therefore the protocol-consistent benchmark selects `d=25`.
 
-Every benchmark parameter is stored in configuration with explicit provenance.
-Resource terms carry source, model, confidence, and notes. Missing required
-terms make the aggregate result incomplete instead of silently contributing
-zero.
+### First protocol-consistent result
+
+At `d=25` with a 1 microsecond code cycle:
+
+```text
+factory throughput       ~= 4,315.15 usable states/s
+factories                = 1
+runtime                  ~= 2,317.42 s  (38.62 min)
+physical qubits          = 262,500
+STV                      ~= 6.08321629e8 physical-qubit*s
+failure-budget estimate  ~= 0.0048666
+```
+
+Unlike the historical mixed-model fixture, geometry, batch timing, batch
+success probability, code-distance selection, runtime, and footprint now come
+from one named architecture model plus one explicit hardware timing assumption.
+
+The 1 microsecond code-cycle value is a benchmark assumption used in Litinski's
+worked example, not a universal hardware constant.
+
+## Scientific guardrails
+
+- The historical baseline remains immutable for regression.
+- Protocol-derived throughput does not use the legacy scalar routing penalty.
+- Routing/workspace are not separately added for the named minimal layout;
+  their required geometry is treated as embedded in the cited tile layout.
+- Expected batch success is used as an average-rate model; stochastic burst
+  simulation is a later milestone.
+- The whole-computation failure expression is a resource-estimation budget
+  model, not an exact stochastic failure probability.
 
 ## Quick start
 
@@ -96,15 +118,17 @@ pip install -e ".[dev]"
 pytest
 python -m experiments.static_resources --config configs/baseline.yaml
 python -m experiments.whole_machine_accounting --config configs/baseline.yaml
+python -m experiments.litinski_minimal_setup --config configs/litinski_minimal_10mT.yaml
 ```
 
 ## Milestones
 
-- [x] Config schema and provenance-aware baseline
-- [x] Surface-code distance model and d=21 regression test
-- [x] Factory throughput regression fixture and N_fac,min=138
-- [x] Lower-bound data footprint, supply-limited runtime, and STV
-- [ ] Provenance-aware whole-machine accounting
-- [ ] Protocol-consistent factory throughput and footprint model
-- [ ] Topology-derived routing/workspace model
+- [x] Config schema and historical regression baseline
+- [x] Surface-code distance and floating-point boundary tests
+- [x] Legacy factory regression fixture
+- [x] Lower-bound resource metrics
+- [x] Provenance-aware partial whole-machine accounting
+- [ ] Protocol-consistent factory timing, reliability, footprint, and STV
+- [ ] Stochastic/burst-aware magic-state production
+- [ ] Multi-factory space-time trade-off search
 - [ ] Static Pareto search

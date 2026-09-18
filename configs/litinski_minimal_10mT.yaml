@@ -1,0 +1,126 @@
+experiment:
+  name: litinski_116_to_12_minimal_10mT
+  version: "0.1"
+  seed: 42
+
+workload:
+  logical_qubits: 100
+  t_count: 10000000
+  t_depth: 1500000
+  clifford_count: 50000000
+  circuit_depth: 5000000
+
+hardware:
+  platform: superconducting_transmon
+
+  topology:
+    type: litinski_minimal_tile_layout
+    routing_model: layout_embedded
+    zeta: 1.0
+
+  errors:
+    p_1q:
+      value: 1.0e-4
+      source: benchmark_assumption
+    p_2q:
+      value: 1.0e-3
+      source: protocol_reference_regime
+    p_measurement:
+      value: 1.0e-3
+      source: benchmark_assumption
+
+  timing_ns:
+    gate_1q: 25
+    gate_2q: 100
+    measurement: 500
+    code_cycle:
+      value: 1000
+      source: literature_benchmark_assumption
+      reference: "Litinski 2019 example uses 1 microsecond per code cycle."
+
+qec:
+  code: surface_code
+
+  # Retained for compatibility with the historical baseline model.
+  target_logical_error: 1.0e-12
+
+  physical_error_threshold:
+    value: 1.0e-2
+    source: model_assumption
+
+  fit_A:
+    value: 0.1
+    source: literature_model
+
+  system_failure_budget:
+    max_total_failure_probability: 0.01
+    model: tiles_x_code_cycles_x_logical_error
+    source: literature_model
+
+  allowed_distances:
+    - 13
+    - 15
+    - 17
+    - 19
+    - 21
+    - 23
+    - 25
+    - 27
+    - 29
+    - 31
+
+factories:
+  mode: protocol_derived
+  count: 1
+  type: magic_state_T
+
+  protocol:
+    name: litinski_116_to_12_compact
+    source: literature
+    reference: "Daniel Litinski, A Game of Surface Codes, Quantum 3, 128 (2019)"
+    physical_error_reference: 1.0e-3
+    distillation_tiles: 44
+    output_storage_tiles: 13
+    output_states_per_batch: 12
+    protocol_steps_per_batch: 99
+    batch_success_probability: 0.89
+
+resource_model:
+  scope: named_minimal_layout
+
+  tile_model:
+    physical_qubits_per_d2:
+      value: 2.0
+      source: literature_model
+
+  data_block:
+    tiles:
+      value: 153
+      source: literature
+      reference: "Litinski compact data block storing 100 logical qubits."
+
+  routing:
+    model: layout_embedded
+    source: literature_layout
+
+  workspace:
+    model: layout_embedded
+    source: literature_layout
+
+optimizer:
+  method: none
+  objective: protocol_consistency
+
+  constraints:
+    max_failure_probability: 0.01
+    max_runtime_seconds: 3600
+
+  pareto_metrics:
+    - physical_qubits
+    - runtime_seconds
+
+outputs:
+  save_runs_csv: true
+  save_pareto_csv: false
+  save_config_snapshot: true
+  save_figures: false
