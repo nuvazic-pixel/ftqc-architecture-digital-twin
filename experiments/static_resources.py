@@ -59,7 +59,7 @@ def run(config_path: str) -> dict[str, float | int | str]:
     )
 
     return {
-        "scope": config["resource_model"]["scope"],
+        "scope": config["resource_model"]["data_block"]["scope"],
         "code_distance": d,
         "factories": n_factories,
         "physical_qubits": physical_qubits,
