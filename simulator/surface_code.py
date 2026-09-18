@@ -43,6 +43,10 @@ def required_code_distance(
 ) -> int:
     """
     Return the smallest allowed odd distance meeting the logical-error target.
+
+    A tiny floating-point tolerance is used at the target boundary so exact
+    analytical cases (for example d=21 in the baseline) are not incorrectly
+    promoted to the next distance by binary rounding.
     """
     if target_logical_error <= 0:
         raise SurfaceCodeDomainError("target_logical_error must be > 0.")
@@ -58,7 +62,12 @@ def required_code_distance(
             fit_A=fit_A,
             distance=distance,
         )
-        if p_logical <= target_logical_error:
+        if p_logical <= target_logical_error or math.isclose(
+            p_logical,
+            target_logical_error,
+            rel_tol=1e-12,
+            abs_tol=0.0,
+        ):
             return distance
 
     raise SurfaceCodeDomainError(
@@ -75,6 +84,9 @@ def required_code_distance_closed_form(
 ) -> int:
     """
     Closed-form reference calculation; returns the next valid odd distance.
+
+    The exponent is snapped to the nearest integer when it is numerically
+    indistinguishable from that integer, avoiding ceil() boundary drift.
     """
     if physical_error >= physical_error_threshold:
         raise SurfaceCodeDomainError(
@@ -84,4 +96,9 @@ def required_code_distance_closed_form(
     exponent = math.log(target_logical_error / fit_A) / math.log(
         physical_error / physical_error_threshold
     )
+
+    nearest_integer = round(exponent)
+    if math.isclose(exponent, nearest_integer, rel_tol=1e-12, abs_tol=1e-12):
+        exponent = float(nearest_integer)
+
     return 2 * math.ceil(exponent) - 1
