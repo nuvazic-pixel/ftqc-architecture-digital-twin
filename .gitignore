@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+results/runs/*
+results/pareto/*
+results/figures/*
+!results/runs/.gitkeep
+!results/pareto/.gitkeep
+!results/figures/.gitkeep
