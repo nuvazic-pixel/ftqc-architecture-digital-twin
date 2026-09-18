@@ -91,7 +91,7 @@ resource_model:
     physical_qubits_per_d2:
       value: 2.0
       source: model_assumption
-    scope: logical_patch_lower_bound
+    scope: data_block_only_lower_bound
 
   factory:
     protocol:
