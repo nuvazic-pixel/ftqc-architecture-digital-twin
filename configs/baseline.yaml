@@ -79,12 +79,45 @@ factories:
   max_factories: 250
 
 resource_model:
-  scope: data_block_only_lower_bound
+  scope: whole_machine_partial
+
+  tile_model:
+    physical_qubits_per_d2:
+      value: 2.0
+      source: literature_model
+      reference: "surface-code tile approximation (~2 d^2 physical qubits per tile)"
 
   data_block:
     physical_qubits_per_d2:
       value: 2.0
       source: model_assumption
+    scope: logical_patch_lower_bound
+
+  factory:
+    protocol:
+      name: litinski_116_to_12_compact
+      source: literature
+      reference: "Daniel Litinski, A Game of Surface Codes, Quantum 3, 128 (2019)"
+      physical_error_reference: 1.0e-3
+      distillation_tiles: 44
+      output_storage_tiles: 13
+      output_states_per_batch: 12
+      protocol_steps_per_batch: 99
+      reported_success_probability: 0.89
+
+    throughput_binding:
+      status: unverified
+      note: >
+        The existing r_T(d) regression data are model-derived fixtures and are
+        not yet derived from the Litinski 116-to-12 timing model. Footprint and
+        runtime must therefore be treated as a mixed-model result until a
+        protocol-consistent throughput model is implemented.
+
+  routing:
+    model: unmodeled
+
+  workspace:
+    model: unmodeled
 
 optimizer:
   method: discrete_search

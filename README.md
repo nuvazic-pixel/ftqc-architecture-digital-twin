@@ -2,20 +2,9 @@
 
 A reproducible simulator for fault-tolerant quantum-computing (FTQC) architecture co-design.
 
-## v0.1 goal
+## Current baseline
 
-Build a deterministic baseline pipeline:
-
-```text
-baseline.yaml
-  -> config loader
-  -> surface-code model
-  -> factory model
-  -> resource metrics
-  -> regression tests
-```
-
-The current baseline invariants are:
+The current regression baseline retains:
 
 ```text
 p_2q = 1e-3
@@ -31,25 +20,50 @@ T_wall,target = 3600 s
 => N_fac,min = 138
 ```
 
-## Milestone 3 resource metrics
+## Milestone 4: provenance-aware whole-machine accounting
 
-The first resource calculation is deliberately conservative in scope:
+The resource account now distinguishes between known terms and genuinely
+unmodeled terms. Missing required terms are **never converted to zero**.
+
+For the p=1e-3 baseline, the factory geometry is anchored to the compact
+116-to-12 layout described by Daniel Litinski in *A Game of Surface Codes:
+Large-Scale Quantum Computing with Lattice Surgery*, Quantum 3, 128 (2019).
+
+That layout uses 44 distillation tiles and, in the cited minimal setup,
+13 output-storage tiles. A surface-code tile is modeled with the common
+approximately `2 d^2` physical-qubit scaling.
+
+At d=21:
 
 ```text
-scope = data_block_only_lower_bound
-physical-qubit model = N_logical * c_patch * d^2
-c_patch = 2.0  [model_assumption]
+data-block lower bound       88,200
+138 x factory distillation 5,355,504
+138 x output storage       1,582,308
+------------------------------------
+known subtotal             7,026,012 physical qubits
 ```
 
-For the current baseline:
+Routing ancillas and lattice-surgery workspace remain explicitly
+`unmodeled`, therefore:
 
 ```text
-N_phys,data = 88,200 physical qubits
-T_wall,supply-limited ~= 3595.03 s
-STV_data_lower_bound ~= 3.17081413e8 physical-qubit*s
+total_physical_qubits = incomplete
+accounting_complete   = false
 ```
 
-These are **not total-machine resource claims**. Factory footprint, routing ancillas, buffers, lattice-surgery workspace, control overhead, Clifford scheduling, and other architecture costs are not yet included. The explicit lower-bound label prevents this intermediate metric from being mistaken for a publication-ready total FTQC estimate.
+This is intentional. The simulator reports a known subtotal rather than
+misrepresenting missing architecture costs as zero.
+
+### Important protocol-consistency guardrail
+
+The current `r_T(d)` throughput values are regression fixtures marked
+`model_derived`. They have **not yet been derived from the Litinski
+116-to-12 timing model**. Consequently, Milestone 4 labels the throughput
+binding as `unverified`.
+
+The known-subtotal STV is useful for regression and sensitivity analysis,
+but it is not yet a publication-ready whole-machine STV until geometry,
+timing, routing, and factory protocol are made mutually consistent.
 
 ## Research direction
 
@@ -66,13 +80,10 @@ under a fixed logical reliability constraint.
 
 ## Reproducibility
 
-Every benchmark parameter is stored in configuration with explicit provenance labels such as `benchmark_assumption`, `model_assumption`, or `model_derived`.
-
-Physics/domain validation lives in the corresponding model modules. For example, the YAML loader validates structure and types, while `surface_code.py` rejects configurations at or above the configured physical QEC threshold.
-
-### Repository initialization note
-
-The initial repository bootstrap was written through the GitHub connector and therefore appears as several consecutive commits with the same initialization message. This is a tooling artifact rather than a sequence of distinct scientific revisions. Subsequent milestones use feature branches and pull requests so they can be reviewed and squash-merged into clean logical commits.
+Every benchmark parameter is stored in configuration with explicit provenance.
+Resource terms carry source, model, confidence, and notes. Missing required
+terms make the aggregate result incomplete instead of silently contributing
+zero.
 
 ## Quick start
 
@@ -84,14 +95,16 @@ python -m venv .venv
 pip install -e ".[dev]"
 pytest
 python -m experiments.static_resources --config configs/baseline.yaml
+python -m experiments.whole_machine_accounting --config configs/baseline.yaml
 ```
 
 ## Milestones
 
 - [x] Config schema and provenance-aware baseline
-- [x] Surface-code distance model and `d == 21` regression test
-- [x] Factory model and `r_T(21) == 60.47` regression test
-- [x] Baseline factory provisioning and `N_fac,min == 138` regression test
-- [ ] Resource metrics: lower-bound data footprint, supply-limited runtime, STV
-- [ ] Total architecture footprint with provenance-backed factory/layout costs
+- [x] Surface-code distance model and d=21 regression test
+- [x] Factory throughput regression fixture and N_fac,min=138
+- [x] Lower-bound data footprint, supply-limited runtime, and STV
+- [ ] Provenance-aware whole-machine accounting
+- [ ] Protocol-consistent factory throughput and footprint model
+- [ ] Topology-derived routing/workspace model
 - [ ] Static Pareto search
