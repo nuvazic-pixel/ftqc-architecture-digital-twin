@@ -78,6 +78,14 @@ factories:
   min_factories: 1
   max_factories: 250
 
+resource_model:
+  scope: data_block_only_lower_bound
+
+  data_block:
+    physical_qubits_per_d2:
+      value: 2.0
+      source: model_assumption
+
 optimizer:
   method: discrete_search
   objective: space_time_volume
