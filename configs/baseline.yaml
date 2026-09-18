@@ -1,0 +1,97 @@
+experiment:
+  name: baseline_transmon_v01
+  version: "0.1"
+  seed: 42
+
+workload:
+  logical_qubits: 100
+  t_count: 10000000
+  t_depth: 1500000
+  clifford_count: 50000000
+  circuit_depth: 5000000
+
+hardware:
+  platform: superconducting_transmon
+
+  topology:
+    type: grid_2d
+    routing_model: scalar
+    zeta: 3.0
+
+  errors:
+    p_1q:
+      value: 1.0e-4
+      source: benchmark_assumption
+
+    p_2q:
+      value: 1.0e-3
+      source: benchmark_assumption
+
+    p_measurement:
+      value: 1.0e-3
+      source: benchmark_assumption
+
+  timing_ns:
+    gate_1q: 25
+    gate_2q: 100
+    measurement: 500
+
+qec:
+  code: surface_code
+
+  target_logical_error: 1.0e-12
+
+  physical_error_threshold:
+    value: 1.0e-2
+    source: model_assumption
+
+  fit_A:
+    value: 0.1
+    source: model_assumption
+
+  allowed_distances:
+    - 13
+    - 15
+    - 17
+    - 19
+    - 21
+    - 23
+    - 25
+    - 27
+
+factories:
+  type: magic_state_T
+
+  throughput_data:
+    - d: 17
+      states_per_second: 80.95
+      source: model_derived
+
+    - d: 18
+      states_per_second: 75.50
+      source: model_derived
+
+    - d: 21
+      states_per_second: 60.47
+      source: model_derived
+
+  min_factories: 1
+  max_factories: 250
+
+optimizer:
+  method: discrete_search
+  objective: space_time_volume
+
+  constraints:
+    max_failure_probability: 0.01
+    max_runtime_seconds: 3600
+
+  pareto_metrics:
+    - physical_qubits
+    - runtime_seconds
+
+outputs:
+  save_runs_csv: true
+  save_pareto_csv: true
+  save_config_snapshot: true
+  save_figures: true
