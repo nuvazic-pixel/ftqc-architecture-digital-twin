@@ -686,7 +686,7 @@ python -m experiments.transport_aware_pareto_search \
 - [x] Layout-aware factory-to-buffer routing/interconnect model
 - [x] Routed/unrouted Pareto stability comparison
 - [x] Greedy 2D packing / A* pathfinding floorplanner
-- [ ] Finite-capacity interconnect + transport latency
+- [x] Finite-capacity interconnect + transport latency
 - [ ] In-flight network-state / multi-event transport queue
 - [ ] Global placement optimization
 - [ ] Adaptive / dynamic factory provisioning
