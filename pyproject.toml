@@ -9,6 +9,7 @@ description = "Reproducible FTQC architecture digital-twin simulator"
 requires-python = ">=3.11"
 dependencies = [
   "PyYAML>=6.0",
+  "numpy>=2.0,<3",
 ]
 
 [project.optional-dependencies]
