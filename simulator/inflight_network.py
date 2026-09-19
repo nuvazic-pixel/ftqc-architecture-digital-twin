@@ -43,10 +43,10 @@ class NetworkTraceSummary:
     event_count: int
     generated_batches: int
     generated_states: int
-    max_inflight_batches_at_event_boundary: int
-    event_boundaries_with_inflight: int
-    fraction_event_boundaries_with_inflight: float
-    inflight_batches_after_last_generation: int
+    max_carryover_batches_at_event_boundary: int
+    event_boundaries_with_carryover: int
+    fraction_event_boundaries_with_carryover: float
+    inflight_batches_at_generation_horizon_end: int
     drain_tail_ticks: int
     mean_batch_latency_ticks: float
     p95_batch_latency_ticks: int
@@ -307,8 +307,11 @@ class PersistentReservationNetwork:
                 "generation_horizon_end_tick must be > 0."
             )
 
-        inflight_counts = [
-            len(self.inflight_batches_at(tick))
+        carryover_counts = [
+            sum(
+                batch.generation_tick < tick < batch.completion_tick
+                for batch in self._batches
+            )
             for tick in ticks
         ]
         latencies = sorted(
@@ -360,18 +363,18 @@ class PersistentReservationNetwork:
             event_count=len(ticks),
             generated_batches=len(self._batches),
             generated_states=len(self._tokens),
-            max_inflight_batches_at_event_boundary=max(
-                inflight_counts,
+            max_carryover_batches_at_event_boundary=max(
+                carryover_counts,
                 default=0,
             ),
-            event_boundaries_with_inflight=sum(
-                count > 0 for count in inflight_counts
+            event_boundaries_with_carryover=sum(
+                count > 0 for count in carryover_counts
             ),
-            fraction_event_boundaries_with_inflight=(
-                sum(count > 0 for count in inflight_counts)
-                / len(inflight_counts)
+            fraction_event_boundaries_with_carryover=(
+                sum(count > 0 for count in carryover_counts)
+                / len(carryover_counts)
             ),
-            inflight_batches_after_last_generation=final_inflight,
+            inflight_batches_at_generation_horizon_end=final_inflight,
             drain_tail_ticks=max(
                 0,
                 max_completion - generation_horizon_end_tick,
