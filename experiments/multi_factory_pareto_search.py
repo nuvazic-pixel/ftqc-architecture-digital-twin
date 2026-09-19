@@ -16,6 +16,9 @@ from simulator.multi_factory import (
     build_multi_factory_risk_kernel,
     multi_factory_startup_cost,
 )
+from simulator.routing_interconnect import (
+    manhattan_trunk_and_spur_footprint,
+)
 from simulator.system_reliability import logical_failure_budget_from_runtime
 
 
@@ -156,6 +159,7 @@ def run(config_path: str) -> dict[str, object]:
     )
     data_tiles = int(resource["data_block"]["tiles"]["value"])
     shared_buffer_cfg = resource["shared_buffer"]
+    routing_cfg = resource.get("routing_interconnect")
 
     candidates: list[dict[str, object]] = []
     infeasible: list[dict[str, object]] = []
@@ -182,11 +186,49 @@ def run(config_path: str) -> dict[str, object]:
                     shared_buffer_cfg["base_storage_tiles"]
                 ),
             )
-            total_tiles = (
+            base_architecture_tiles = (
                 data_tiles
                 + factories * int(protocol["distillation_tiles"])
                 + storage_tiles
             )
+
+            if routing_cfg is None:
+                routing_tiles = 0
+                routing_model = "unmodeled"
+                routing_details = {
+                    "routing_model": routing_model,
+                    "routing_tiles": 0,
+                    "routing_trunk_tiles": 0,
+                    "routing_spur_tiles": 0,
+                    "routing_effective_factory_span_tiles": None,
+                    "routing_slot_pitch_tiles": None,
+                }
+            else:
+                routing = manhattan_trunk_and_spur_footprint(
+                    factory_count=factories,
+                    factory_tile_area=int(protocol["distillation_tiles"]),
+                    baseline_factory_count=int(
+                        routing_cfg["baseline_factory_count"]
+                    ),
+                    clearance_tiles=int(routing_cfg["clearance_tiles"]),
+                    lane_width_tiles=int(routing_cfg["lane_width_tiles"]),
+                    branch_spur_tiles=int(routing_cfg["branch_spur_tiles"]),
+                    source=str(routing_cfg["source"]),
+                )
+                routing_tiles = routing.total_routing_tiles
+                routing_model = routing.model
+                routing_details = {
+                    "routing_model": routing.model,
+                    "routing_tiles": routing.total_routing_tiles,
+                    "routing_trunk_tiles": routing.trunk_tiles,
+                    "routing_spur_tiles": routing.spur_tiles,
+                    "routing_effective_factory_span_tiles": (
+                        routing.effective_factory_span_tiles
+                    ),
+                    "routing_slot_pitch_tiles": routing.slot_pitch_tiles,
+                }
+
+            total_tiles = base_architecture_tiles + routing_tiles
 
             for initial_states in search_cfg["sensitivity"][
                 "initial_buffer_states"
@@ -253,8 +295,22 @@ def run(config_path: str) -> dict[str, object]:
                     )
                     log10_risk = math.log10(risk_for_log)
 
-                    physical_qubits = int(
-                        round(total_tiles * tile_factor * distance**2)
+                    base_physical_qubits = int(
+                        round(
+                            base_architecture_tiles
+                            * tile_factor
+                            * distance**2
+                        )
+                    )
+                    routing_physical_qubits = int(
+                        round(
+                            routing_tiles
+                            * tile_factor
+                            * distance**2
+                        )
+                    )
+                    physical_qubits = (
+                        base_physical_qubits + routing_physical_qubits
                     )
                     campaign_runtime = (
                         nominal_runtime_seconds
@@ -273,9 +329,30 @@ def run(config_path: str) -> dict[str, object]:
                             "service_period_events": (
                                 kernel.service_period_events
                             ),
+                            "base_architecture_tiles": base_architecture_tiles,
+                            "routing_tiles": routing_details["routing_tiles"],
+                            "routing_trunk_tiles": routing_details[
+                                "routing_trunk_tiles"
+                            ],
+                            "routing_spur_tiles": routing_details[
+                                "routing_spur_tiles"
+                            ],
+                            "routing_effective_factory_span_tiles": (
+                                routing_details[
+                                    "routing_effective_factory_span_tiles"
+                                ]
+                            ),
+                            "routing_slot_pitch_tiles": routing_details[
+                                "routing_slot_pitch_tiles"
+                            ],
+                            "routing_model": routing_details["routing_model"],
                             "total_tiles": total_tiles,
                             "storage_tiles": storage_tiles,
                             "code_distance": distance,
+                            "base_physical_qubits": base_physical_qubits,
+                            "routing_physical_qubits": (
+                                routing_physical_qubits
+                            ),
                             "physical_qubits": physical_qubits,
                             "expected_prefill_seconds": startup[
                                 "expected_prefill_seconds"
@@ -388,6 +465,16 @@ def run(config_path: str) -> dict[str, object]:
         "routing_interconnect_status": resource[
             "multi_factory_layout"
         ]["routing_interconnect"],
+        "routing_model": (
+            "unmodeled"
+            if routing_cfg is None
+            else str(routing_cfg["model"])
+        ),
+        "routing_source": (
+            None
+            if routing_cfg is None
+            else str(routing_cfg["source"])
+        ),
         "candidate_count": len(candidates) + len(infeasible),
         "feasible_candidate_count": len(candidates),
         "infeasible_candidate_count": len(infeasible),

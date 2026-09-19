@@ -28,6 +28,9 @@ automatic policy Pareto search
 
 multi-factory shared-buffer co-design
   -> exact phase-aware risk across factory count, buffer, and startup
+
+routing/interconnect spatial model
+  -> explicit tile cost for factory-to-buffer connectivity
 ```
 
 ## Milestone 11: exact multi-factory shared-buffer Pareto search
@@ -180,6 +183,139 @@ multi_factory_startup_vs_risk.png
 
 Both plots use logarithmic starvation-risk axes.
 
+## Milestone 12: routing/interconnect spatial cost
+
+The Litinski tile framework makes connectivity part of the architecture rather
+than a free abstraction: magic states must be moved through available tile
+regions. Related resource-estimation work likewise treats multi-factory
+placement as a 2D packing problem in which every factory needs a path to the
+data block.
+
+This milestone adds a deterministic first routing model instead of an arbitrary
+percentage overhead.
+
+### Manhattan trunk-and-spur v1
+
+The named one-factory layout remains the embedded baseline and receives zero
+*additional* routing tiles.
+
+For every extra factory:
+
+```text
+factory tile area = 44
+effective compact span = ceil(sqrt(44)) = 7 tiles
+clearance = 1 tile
+slot pitch = 8 tiles
+branch spur = 1 tile
+lane width = 1 tile
+
+additional routing = 9 tiles / extra factory
+```
+
+Therefore:
+
+```text
+factories   additional routing tiles
+1           0
+2           9
+3           18
+4           27
+```
+
+Each routing tile is charged through the same configured tile-to-physical-qubit
+mapping as the rest of the surface-code architecture.
+
+At d=27 this means:
+
+```text
+9 routing tiles  -> 13,122 physical qubits
+18 routing tiles -> 26,244 physical qubits
+27 routing tiles -> 39,366 physical qubits
+```
+
+The routed benchmark is separate from the Milestone 11 benchmark:
+
+```text
+configs/litinski_multi_factory_pareto_10mT.yaml
+  -> historical unrouted Milestone 11 result
+
+configs/litinski_multi_factory_routed_pareto_10mT.yaml
+  -> Milestone 12 spatial-routing result
+```
+
+The same Pareto engine is rerun after routing tiles are added **before** code
+distance and physical-qubit accounting. This means routing can influence both
+the direct footprint and, if a reliability boundary is crossed, the selected
+code distance.
+
+### Direct routed/unrouted comparison
+
+`experiments/routing_pareto_comparison.py` joins candidates by architecture ID
+and reports:
+
+```text
+routing tiles
+routing physical qubits
+routed vs unrouted physical-qubit delta
+fractional footprint increase
+code-distance changes
+Pareto membership changes
+risk-target reference-policy changes
+```
+
+This lets us test whether a previously attractive architecture survives its
+explicit spatial interconnect cost instead of assuming that it does.
+
+### First routed Pareto result: the preferred architecture can flip
+
+The first comparison does **not** preserve every Milestone 11 reference design.
+
+For moderate risk targets, explicit routing cost favors fewer factories and a
+larger shared buffer:
+
+```text
+risk target   unrouted reference        routed reference
+1e-2          N2_B048_STAG_I012         N1_B096_SYNC_I024
+1e-4          N2_B048_SYNC_I024         N1_B096_SYNC_I048
+1e-6          N3_B048_SYNC_I024         N2_B096_SYNC_I048
+1e-9          N3_B048_STAG_I024         N2_B096_SYNC_I048
+```
+
+For the stricter targets, the reference designs remain unchanged:
+
+```text
+1e-12         N2_B096_STAG_I048
+1e-18         N3_B096_STAG_I048
+1e-24         N4_B096_STAG_I048
+```
+
+This is a cross-layer result: once interconnect space is charged explicitly,
+"more factories with a smaller buffer" can lose to "fewer factories with a
+larger buffer" even though the stochastic production model itself has not
+changed.
+
+For example, the routed 2-factory / 48-state architecture at d=27 adds 9
+routing tiles = 13,122 physical qubits, raising its footprint from 427,194 to
+440,316 physical qubits. The one-factory / 96-state architecture keeps the
+embedded one-factory routing baseline and remains at 438,858 physical qubits.
+
+The result should be interpreted as **model sensitivity**, not a final floorplan
+claim: the exact geometry is still the explicit Manhattan lower-bound
+assumption described below.
+
+### Routing-model provenance
+
+The **need** for routed connectivity is literature-grounded. The exact
+`manhattan_trunk_and_spur_v1` geometry is deliberately labeled
+`model_assumption`.
+
+The compact span uses `ceil(sqrt(factory_tile_area))` as a reproducible
+first-order envelope. It is **not** a claim that Litinski's 44-tile 116-to-12
+factory is literally a 7-by-7 square.
+
+Transport latency, path crossings, contention, detailed factory polygons, and
+a full greedy 2D packing algorithm remain future refinements.
+
 ## Scientific guardrails
 
 - Batch successes remain independent with constant p=0.89.
@@ -209,6 +345,15 @@ python -m experiments.multi_factory_pareto_search \
 python -m experiments.plot_multi_factory_pareto \
   --config configs/litinski_multi_factory_pareto_10mT.yaml \
   --output-dir results/multi_factory_pareto
+
+python -m experiments.multi_factory_pareto_search \
+  --config configs/litinski_multi_factory_routed_pareto_10mT.yaml \
+  --output-dir results/multi_factory_routed
+
+python -m experiments.routing_pareto_comparison \
+  --unrouted-config configs/litinski_multi_factory_pareto_10mT.yaml \
+  --routed-config configs/litinski_multi_factory_routed_pareto_10mT.yaml \
+  --output-dir results/routing_impact
 ```
 
 ## Milestones
@@ -220,6 +365,8 @@ python -m experiments.plot_multi_factory_pareto \
 - [x] Exact finite-state buffer-risk characterization
 - [x] Initial-buffer prefill policy study
 - [x] Automatic buffer/prefill Pareto policy search
-- [ ] Exact multi-factory shared-buffer Pareto search
+- [x] Exact multi-factory shared-buffer Pareto search
 - [ ] Layout-aware factory-to-buffer routing/interconnect model
+- [ ] Routed/unrouted Pareto stability comparison
+- [ ] Detailed 2D packing / pathfinding placement model
 - [ ] Adaptive / dynamic factory provisioning
