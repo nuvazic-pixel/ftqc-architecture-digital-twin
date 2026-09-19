@@ -518,15 +518,19 @@ class FiniteBufferBackpressureNetwork:
                 states_per_batch=states_per_batch,
             )
 
+        generation_busy_ticks = dict(self._cell_busy_ticks)
+
         drain_tick = generation_horizon_end_tick
         drain_limit = generation_horizon_end_tick + max_drain_ticks
 
-        while not self.is_empty() and drain_tick < drain_limit:
+        while not self.is_empty() and drain_tick <= drain_limit:
             self.step(
                 tick=drain_tick,
                 scheduled_factories=(),
                 states_per_batch=states_per_batch,
             )
+            if self.is_empty():
+                break
             drain_tick += 1
 
         if not self.is_empty():
@@ -554,7 +558,7 @@ class FiniteBufferBackpressureNetwork:
             p95_latency = 0
             max_latency = 0
 
-        busiest = max(self._cell_busy_ticks.values(), default=0)
+        busiest = max(generation_busy_ticks.values(), default=0)
         generation_horizon_capacity = generation_horizon_end_tick
 
         return BackpressureTraceSummary(
