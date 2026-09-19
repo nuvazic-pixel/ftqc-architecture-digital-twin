@@ -12,6 +12,11 @@ from metrics.pareto import Objective, pareto_partition
 from metrics.space_time_volume import space_time_volume
 from simulator.buffer_consumer import replicated_storage_tiles
 from simulator.config import load_config
+from simulator.floorplanner import (
+    build_greedy_floorplan,
+    placement_summaries,
+    route_summaries,
+)
 from simulator.multi_factory import (
     build_multi_factory_risk_kernel,
     multi_factory_startup_cost,
@@ -138,6 +143,125 @@ def _select_distance(
     )
 
 
+def _routing_details(
+    *,
+    resource: dict[str, object],
+    factories: int,
+    data_tiles: int,
+    storage_tiles: int,
+    factory_tiles: int,
+) -> dict[str, object]:
+    routing_cfg = resource.get("routing_interconnect")
+    floorplanner_cfg = resource.get("floorplanner")
+
+    if routing_cfg is not None and floorplanner_cfg is not None:
+        raise ValueError(
+            "resource_model may configure routing_interconnect or floorplanner, "
+            "but not both."
+        )
+
+    if floorplanner_cfg is not None:
+        floorplan = build_greedy_floorplan(
+            factory_count=factories,
+            data_block_tiles=data_tiles,
+            shared_buffer_tiles=storage_tiles,
+            factory_tiles=factory_tiles,
+            clearance_tiles=int(floorplanner_cfg["clearance_tiles"]),
+            search_margin_tiles=int(
+                floorplanner_cfg["search_margin_tiles"]
+            ),
+        )
+        baseline = build_greedy_floorplan(
+            factory_count=int(
+                floorplanner_cfg["embedded_baseline_factory_count"]
+            ),
+            data_block_tiles=data_tiles,
+            shared_buffer_tiles=storage_tiles,
+            factory_tiles=factory_tiles,
+            clearance_tiles=int(floorplanner_cfg["clearance_tiles"]),
+            search_margin_tiles=int(
+                floorplanner_cfg["search_margin_tiles"]
+            ),
+        )
+
+        accounting = str(floorplanner_cfg["routing_accounting"])
+        if accounting == "incremental_over_embedded_one_factory_layout":
+            charged_tiles = max(
+                0,
+                floorplan.route_union_tiles - baseline.route_union_tiles,
+            )
+        elif accounting == "charge_full_route_union":
+            charged_tiles = floorplan.route_union_tiles
+        else:
+            raise ValueError(
+                f"unsupported floorplanner routing_accounting: {accounting}"
+            )
+
+        min_x, min_y, max_x, max_y = floorplan.bbox
+        return {
+            "routing_model": floorplan.model,
+            "routing_tiles": charged_tiles,
+            "routing_trunk_tiles": None,
+            "routing_spur_tiles": None,
+            "routing_effective_factory_span_tiles": None,
+            "routing_slot_pitch_tiles": None,
+            "floorplan_block_shape_model": floorplan.block_shape_model,
+            "floorplan_placement_objective": (
+                floorplan.placement_objective
+            ),
+            "floorplan_total_route_union_tiles": (
+                floorplan.route_union_tiles
+            ),
+            "floorplan_embedded_baseline_route_tiles": (
+                baseline.route_union_tiles
+            ),
+            "floorplan_bbox_min_x": min_x,
+            "floorplan_bbox_min_y": min_y,
+            "floorplan_bbox_max_x": max_x,
+            "floorplan_bbox_max_y": max_y,
+            "floorplan_width_tiles": max_x - min_x + 1,
+            "floorplan_height_tiles": max_y - min_y + 1,
+            "floorplan_bbox_area_tiles": floorplan.bbox_area_tiles,
+            "floorplan_active_tiles_full_routes": floorplan.active_tiles,
+            "floorplan_packing_density": floorplan.packing_density,
+            "floorplan_placements": placement_summaries(floorplan),
+            "floorplan_routes": route_summaries(floorplan),
+            "routing_accounting": accounting,
+        }
+
+    if routing_cfg is None:
+        return {
+            "routing_model": "unmodeled",
+            "routing_tiles": 0,
+            "routing_trunk_tiles": 0,
+            "routing_spur_tiles": 0,
+            "routing_effective_factory_span_tiles": None,
+            "routing_slot_pitch_tiles": None,
+        }
+
+    routing = manhattan_trunk_and_spur_footprint(
+        factory_count=factories,
+        factory_tile_area=factory_tiles,
+        baseline_factory_count=int(
+            routing_cfg["baseline_factory_count"]
+        ),
+        clearance_tiles=int(routing_cfg["clearance_tiles"]),
+        lane_width_tiles=int(routing_cfg["lane_width_tiles"]),
+        branch_spur_tiles=int(routing_cfg["branch_spur_tiles"]),
+        source=str(routing_cfg["source"]),
+    )
+    return {
+        "routing_model": routing.model,
+        "routing_tiles": routing.total_routing_tiles,
+        "routing_trunk_tiles": routing.trunk_tiles,
+        "routing_spur_tiles": routing.spur_tiles,
+        "routing_effective_factory_span_tiles": (
+            routing.effective_factory_span_tiles
+        ),
+        "routing_slot_pitch_tiles": routing.slot_pitch_tiles,
+    }
+
+
 def run(config_path: str) -> dict[str, object]:
     config = load_config(config_path)
 
@@ -159,7 +283,6 @@ def run(config_path: str) -> dict[str, object]:
     )
     data_tiles = int(resource["data_block"]["tiles"]["value"])
     shared_buffer_cfg = resource["shared_buffer"]
-    routing_cfg = resource.get("routing_interconnect")
 
     candidates: list[dict[str, object]] = []
     infeasible: list[dict[str, object]] = []
@@ -192,42 +315,14 @@ def run(config_path: str) -> dict[str, object]:
                 + storage_tiles
             )
 
-            if routing_cfg is None:
-                routing_tiles = 0
-                routing_model = "unmodeled"
-                routing_details = {
-                    "routing_model": routing_model,
-                    "routing_tiles": 0,
-                    "routing_trunk_tiles": 0,
-                    "routing_spur_tiles": 0,
-                    "routing_effective_factory_span_tiles": None,
-                    "routing_slot_pitch_tiles": None,
-                }
-            else:
-                routing = manhattan_trunk_and_spur_footprint(
-                    factory_count=factories,
-                    factory_tile_area=int(protocol["distillation_tiles"]),
-                    baseline_factory_count=int(
-                        routing_cfg["baseline_factory_count"]
-                    ),
-                    clearance_tiles=int(routing_cfg["clearance_tiles"]),
-                    lane_width_tiles=int(routing_cfg["lane_width_tiles"]),
-                    branch_spur_tiles=int(routing_cfg["branch_spur_tiles"]),
-                    source=str(routing_cfg["source"]),
-                )
-                routing_tiles = routing.total_routing_tiles
-                routing_model = routing.model
-                routing_details = {
-                    "routing_model": routing.model,
-                    "routing_tiles": routing.total_routing_tiles,
-                    "routing_trunk_tiles": routing.trunk_tiles,
-                    "routing_spur_tiles": routing.spur_tiles,
-                    "routing_effective_factory_span_tiles": (
-                        routing.effective_factory_span_tiles
-                    ),
-                    "routing_slot_pitch_tiles": routing.slot_pitch_tiles,
-                }
-
+            routing_details = _routing_details(
+                resource=resource,
+                factories=factories,
+                data_tiles=data_tiles,
+                storage_tiles=storage_tiles,
+                factory_tiles=int(protocol["distillation_tiles"]),
+            )
+            routing_tiles = int(routing_details["routing_tiles"])
             total_tiles = base_architecture_tiles + routing_tiles
 
             for initial_states in search_cfg["sensitivity"][
@@ -317,72 +412,56 @@ def run(config_path: str) -> dict[str, object]:
                         + float(startup["conservative_startup_seconds"])
                     )
 
-                    candidates.append(
-                        {
-                            "candidate_id": candidate_id,
-                            "factory_count": factories,
-                            "buffer_capacity_states": capacity,
-                            "initial_buffer_states": initial_states,
-                            "phase_policy": phase_policy,
-                            "event_order": kernel.event_order,
-                            "event_interval_ns": kernel.event_interval_ns,
-                            "service_period_events": (
-                                kernel.service_period_events
-                            ),
-                            "base_architecture_tiles": base_architecture_tiles,
-                            "routing_tiles": routing_details["routing_tiles"],
-                            "routing_trunk_tiles": routing_details[
-                                "routing_trunk_tiles"
-                            ],
-                            "routing_spur_tiles": routing_details[
-                                "routing_spur_tiles"
-                            ],
-                            "routing_effective_factory_span_tiles": (
-                                routing_details[
-                                    "routing_effective_factory_span_tiles"
-                                ]
-                            ),
-                            "routing_slot_pitch_tiles": routing_details[
-                                "routing_slot_pitch_tiles"
-                            ],
-                            "routing_model": routing_details["routing_model"],
-                            "total_tiles": total_tiles,
-                            "storage_tiles": storage_tiles,
-                            "code_distance": distance,
-                            "base_physical_qubits": base_physical_qubits,
-                            "routing_physical_qubits": (
-                                routing_physical_qubits
-                            ),
-                            "physical_qubits": physical_qubits,
-                            "expected_prefill_seconds": startup[
-                                "expected_prefill_seconds"
-                            ],
-                            "phase_setup_seconds": startup[
-                                "phase_setup_seconds"
-                            ],
-                            "conservative_startup_seconds": startup[
-                                "conservative_startup_seconds"
-                            ],
-                            "startup_accounting_model": startup[
-                                "startup_accounting_model"
-                            ],
-                            "successful_prefill_batches_required": startup[
-                                "successful_prefill_batches_required"
-                            ],
-                            "probability_any_starvation": risk,
-                            "log10_probability_any_starvation": log10_risk,
-                            "risk_probability_underflowed": risk == 0.0,
-                            "conservative_campaign_failure_budget": (
-                                campaign_failure
-                            ),
-                            "nominal_campaign_stv_qubit_seconds": (
-                                space_time_volume(
-                                    physical_qubits=physical_qubits,
-                                    runtime_seconds=campaign_runtime,
-                                )
-                            ),
-                        }
-                    )
+                    row = {
+                        "candidate_id": candidate_id,
+                        "factory_count": factories,
+                        "buffer_capacity_states": capacity,
+                        "initial_buffer_states": initial_states,
+                        "phase_policy": phase_policy,
+                        "event_order": kernel.event_order,
+                        "event_interval_ns": kernel.event_interval_ns,
+                        "service_period_events": (
+                            kernel.service_period_events
+                        ),
+                        "base_architecture_tiles": base_architecture_tiles,
+                        "total_tiles": total_tiles,
+                        "storage_tiles": storage_tiles,
+                        "code_distance": distance,
+                        "base_physical_qubits": base_physical_qubits,
+                        "routing_physical_qubits": (
+                            routing_physical_qubits
+                        ),
+                        "physical_qubits": physical_qubits,
+                        "expected_prefill_seconds": startup[
+                            "expected_prefill_seconds"
+                        ],
+                        "phase_setup_seconds": startup[
+                            "phase_setup_seconds"
+                        ],
+                        "conservative_startup_seconds": startup[
+                            "conservative_startup_seconds"
+                        ],
+                        "startup_accounting_model": startup[
+                            "startup_accounting_model"
+                        ],
+                        "successful_prefill_batches_required": startup[
+                            "successful_prefill_batches_required"
+                        ],
+                        "probability_any_starvation": risk,
+                        "log10_probability_any_starvation": log10_risk,
+                        "risk_probability_underflowed": risk == 0.0,
+                        "conservative_campaign_failure_budget": (
+                            campaign_failure
+                        ),
+                        "nominal_campaign_stv_qubit_seconds": (
+                            space_time_volume(
+                                physical_qubits=physical_qubits,
+                                runtime_seconds=campaign_runtime,
+                            )
+                        ),
+                    }
+                    row.update(routing_details)
+                    candidates.append(row)
 
     objectives = [
         Objective(
@@ -457,6 +536,18 @@ def run(config_path: str) -> dict[str, object]:
             }
         )
 
+    routing_cfg = resource.get("routing_interconnect")
+    floorplanner_cfg = resource.get("floorplanner")
+    if floorplanner_cfg is not None:
+        top_routing_model = str(floorplanner_cfg["model"])
+        top_routing_source = str(floorplanner_cfg["source"])
+    elif routing_cfg is not None:
+        top_routing_model = str(routing_cfg["model"])
+        top_routing_source = str(routing_cfg["source"])
+    else:
+        top_routing_model = "unmodeled"
+        top_routing_source = None
+
     return {
         "scope": resource["scope"],
         "model": search_cfg["model"],
@@ -465,16 +556,8 @@ def run(config_path: str) -> dict[str, object]:
         "routing_interconnect_status": resource[
             "multi_factory_layout"
         ]["routing_interconnect"],
-        "routing_model": (
-            "unmodeled"
-            if routing_cfg is None
-            else str(routing_cfg["model"])
-        ),
-        "routing_source": (
-            None
-            if routing_cfg is None
-            else str(routing_cfg["source"])
-        ),
+        "routing_model": top_routing_model,
+        "routing_source": top_routing_source,
         "candidate_count": len(candidates) + len(infeasible),
         "feasible_candidate_count": len(candidates),
         "infeasible_candidate_count": len(infeasible),
