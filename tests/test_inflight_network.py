@@ -124,3 +124,10 @@ def test_stress_outputs_are_machine_readable(
         output = Path(path)
         assert output.exists()
         assert output.stat().st_size > 0
+
+
+def test_discover_persistent_network_stress_profile(
+    stress_result: dict[str, object],
+):
+    # Temporary discovery assertion; replace with locked regression values.
+    assert False, stress_result["results"]
