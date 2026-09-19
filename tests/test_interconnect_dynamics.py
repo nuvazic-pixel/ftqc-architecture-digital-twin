@@ -122,19 +122,32 @@ def test_floorplan_factory_paths_are_explicit_and_complete():
     assert all(len(path) >= 1 for path in paths.values())
 
 
-def test_transport_aware_search_exposes_reference_map_for_review(
+def test_transport_aware_reference_map_is_locked(
     transport_result: dict[str, object],
 ):
     assert transport_result["candidate_count"] == 42
-    assert transport_result["feasible_candidate_count"] > 0
+    assert transport_result["feasible_candidate_count"] == 42
+    assert transport_result["infeasible_candidate_count"] == 0
     assert transport_result["pareto_candidate_count"] > 0
 
-    # Deliberate temporary discovery assertion. Replace with locked regression
-    # values after CI exposes the exact transport-aware reference map.
-    assert transport_result["risk_target_views"] == {}, (
-        transport_result["risk_target_views"],
-        transport_result["infeasible_candidates"],
-    )
+    views = transport_result["risk_target_views"]
+    expected = {
+        "0.01": "N2_B048_STAG_I012",
+        "0.0001": "N2_B048_SYNC_I024",
+        "1e-06": "N3_B048_SYNC_I024",
+        "1e-09": "N3_B048_SYNC_I048",
+        "1e-12": "N3_B096_SYNC_I048",
+        "1e-18": "N3_B096_STAG_I048",
+        "1e-24": None,
+    }
+
+    assert {
+        target: None if item is None else item["candidate_id"]
+        for target, item in views.items()
+    } == expected
+
+    assert views["0.01"]["expected_stall_extension_seconds"] > 0
+    assert views["1e-12"]["expected_stall_extension_seconds"] > 0
 
 
 def test_transport_aware_outputs_are_machine_readable(
