@@ -1,0 +1,189 @@
+experiment:
+  name: litinski_multi_factory_transport_aware_pareto_10mT
+  version: "0.1"
+
+workload:
+  logical_qubits: 100
+  t_count: 10000000
+
+hardware:
+  platform: superconducting_transmon
+
+  errors:
+    p_1q:
+      value: 1.0e-4
+      source: benchmark_assumption
+    p_2q:
+      value: 1.0e-3
+      source: protocol_reference_regime
+    p_measurement:
+      value: 1.0e-3
+      source: benchmark_assumption
+
+  timing_ns:
+    gate_1q: 25
+    gate_2q: 100
+    measurement: 500
+    code_cycle:
+      value: 1000
+      source: literature_benchmark_assumption
+
+qec:
+  target_logical_error: 1.0e-12
+
+  physical_error_threshold:
+    value: 1.0e-2
+    source: model_assumption
+
+  fit_A:
+    value: 0.1
+    source: literature_model
+
+  system_failure_budget:
+    max_total_failure_probability: 0.01
+
+  allowed_distances:
+    - 13
+    - 15
+    - 17
+    - 19
+    - 21
+    - 23
+    - 25
+    - 27
+    - 29
+    - 31
+
+factories:
+  type: magic_state_T
+
+  protocol:
+    name: litinski_116_to_12_compact
+    distillation_tiles: 44
+    output_states_per_batch: 12
+    protocol_steps_per_batch: 99
+    batch_success_probability: 0.89
+
+resource_model:
+  scope: exact_multi_factory_floorplan_with_capacity_limited_transport
+
+  tile_model:
+    physical_qubits_per_d2:
+      value: 2.0
+      source: literature_model
+
+  data_block:
+    tiles:
+      value: 153
+      source: literature
+
+  shared_buffer:
+    base_capacity_states: 12
+    base_storage_tiles: 13
+    scaling_model: linear_block_replication
+    source: model_assumption
+
+  multi_factory_layout:
+    model: shared_buffer_replaces_per_factory_output_storage
+    source: model_assumption
+    routing_interconnect: greedy_2d_floorplan_astar_capacity_limited
+
+  floorplanner:
+    model: greedy_compact_raster_astar_v1
+    source: model_assumption
+    block_shape_model: compact_raster_exact_area_v1
+    placement_objective: min_route_union_then_bbox_then_path_then_anchor_offset
+    clearance_tiles: 1
+    search_margin_tiles: 24
+    route_sharing: true
+    embedded_baseline_factory_count: 1
+    routing_accounting: incremental_over_embedded_one_factory_layout
+
+interconnect_dynamics:
+  model: pipelined_cell_capacity_v1
+  source: model_assumption
+  lane_capacity_states_per_logical_step: 1
+  hop_latency_logical_steps: 1
+  batch_delivery_semantics: atomic_after_last_state_arrives
+  arbitration: round_robin_token_then_factory_id
+  in_flight_carry_across_factory_events: unsupported_reject_candidate
+  expected_stall_runtime_model: missed_service_slots_divided_by_consumer_rate
+  prefill_transport_tail:
+    synchronized: all_success_batch_max_latency
+    even_staggered: max_single_batch_latency
+  note: >
+    Each corridor cell can transport one magic state per logical time step.
+    States pipeline along A* paths. Shared cells enforce finite capacity.
+    A factory batch becomes usable only after all 12 states arrive. The model
+    rejects candidates whose transport remains in flight across the next
+    factory completion event rather than silently truncating queue state.
+
+multi_factory_search:
+  model: exact_phase_aware_shared_buffer_with_transport
+  event_order: consumer_then_transport_arrival
+
+  consumer:
+    nominal_runtime_seconds: 3600
+
+  startup_accounting:
+    model: phase_setup_plus_prefill_plus_transport_tail_conservative
+    full_machine_active_during_startup: true
+
+  sensitivity:
+    factory_counts:
+      - 1
+      - 2
+      - 3
+      - 4
+    buffer_capacities_states:
+      - 48
+      - 96
+    initial_buffer_states:
+      - 12
+      - 24
+      - 48
+    phase_policies:
+      - synchronized
+      - even_staggered
+
+  feasibility:
+    max_conservative_campaign_failure_budget: 0.01
+
+  objectives:
+    - metric: physical_qubits
+      direction: min
+    - metric: conservative_startup_seconds
+      direction: min
+    - metric: log10_probability_any_starvation
+      direction: min
+
+  risk_target_views:
+    - 0.01
+    - 0.0001
+    - 0.000001
+    - 0.000000001
+    - 0.000000000001
+    - 0.000000000000000001
+    - 0.000000000000000000000001
+
+  reference_selection:
+    rule: minimum_physical_qubits_then_startup_then_starvation_risk
+
+optimizer:
+  method: exact_discrete_pareto_filter
+  objective: transport_aware_multi_factory_co_design
+
+  constraints:
+    max_failure_probability: 0.01
+    max_runtime_seconds: 3600
+
+  pareto_metrics:
+    - physical_qubits
+    - conservative_startup_seconds
+    - log10_probability_any_starvation
+
+outputs:
+  save_runs_csv: true
+  save_pareto_csv: true
+  save_config_snapshot: true
+  save_figures: true

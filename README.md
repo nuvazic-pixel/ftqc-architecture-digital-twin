@@ -34,6 +34,9 @@ routing/interconnect spatial model
 
 2D greedy floorplanner + A* pathfinder
   -> explicit block placement, obstacles, corridor reuse, and candidate layouts
+
+finite-capacity interconnect dynamics
+  -> pipelined transport, shared-cell contention, delayed arrivals, and STV feedback
 ```
 
 ## Milestone 11: exact multi-factory shared-buffer Pareto search
@@ -464,6 +467,162 @@ greedy 2D floorplanner + A*
 `experiments.floorplan_model_comparison` compares the reference architecture
 selected by all three models for every configured risk target.
 
+## Milestone 14: finite-capacity interconnect + transport latency
+
+Milestone 13 allowed route sharing but treated shared corridors as temporally
+free. Milestone 14 gives the 2D paths finite transport capacity and feeds the
+result back into starvation risk, expected runtime, reliability, and STV.
+
+### Pipelined cell-capacity model
+
+The current benchmark assumes:
+
+```text
+1 magic state / route cell / logical time step
+1 path-cell hop / logical time step
+12 states / successful factory batch
+```
+
+Individual states pipeline through the A* route. If two routes use the same cell
+at the same logical step, the finite-capacity reservation serializes them.
+
+Simultaneous successful factories are scheduled round-robin by token index and
+factory ID. This avoids silently giving a whole 12-state batch permanent
+priority over the other factories.
+
+The batch is still exposed to the shared buffer atomically only after its last
+state arrives, preserving the earlier 116-to-12 batch semantics.
+
+### Exact risk with intra-event transport arrivals
+
+The transport-aware kernel no longer assumes factory output appears at the
+buffer at factory-completion time.
+
+For each factory event it branches over the exact Bernoulli success outcomes,
+computes transport completion times from the actual 2D paths, serves consumer
+demand up to each arrival, then admits the transported batch.
+
+The model reports:
+
+```text
+P(any starvation)
+expected starved service slots
+expected stall intervals
+expected overflow states
+expected stall extension
+single-batch transport latency
+all-success contention latency
+expected campaign runtime
+expected campaign STV
+```
+
+Expected stall extension uses the same fixed-rate consumer semantics as the
+earlier buffer model:
+
+```text
+expected stall extension
+  = expected missed service slots / consumer issue rate
+```
+
+### Transport-aware code-distance selection
+
+For every architecture and every allowed code distance, the simulator now
+evaluates:
+
+```text
+nominal algorithm runtime
++ conservative prefill / phase startup
++ transport tail after final prefill production
++ expected transport-induced stall extension
+```
+
+The smallest code distance passing the configured whole-machine failure budget
+is selected. Transport is therefore no longer reliability-free.
+
+### Scope guardrail: no hidden in-flight truncation
+
+This first exact transport kernel requires every produced batch to finish
+transport before the next factory-completion event.
+
+If a route/capacity combination spills across that event boundary, the
+candidate is rejected as unsupported rather than silently dropping in-flight
+network state.
+
+A later network-state model can lift this restriction.
+
+### Why this is the next digital-twin layer
+
+Milestone 13 could answer:
+
+```text
+Where are the blocks?
+Which cells form the routes?
+How many route tiles are required?
+```
+
+Milestone 14 adds:
+
+```text
+When do transported states actually arrive?
+Which shared cells serialize traffic?
+How much starvation is caused by transport delay?
+How much expected runtime and STV does that delay add?
+```
+
+This explicitly tests whether the spatially cheapest floorplan is also the
+temporally best one.
+
+### First transport-aware Pareto result
+
+Finite transport latency leaves the moderate-risk reference policies stable:
+
+```text
+maximum P(any starvation)   floorplan zero-latency   finite-capacity transport
+1e-2                        N2_B048_STAG_I012        N2_B048_STAG_I012
+1e-4                        N2_B048_SYNC_I024        N2_B048_SYNC_I024
+1e-6                        N3_B048_SYNC_I024        N3_B048_SYNC_I024
+```
+
+But the strict-risk region changes:
+
+```text
+1e-9   N3_B048_STAG_I024 -> N3_B048_SYNC_I048
+1e-12  N2_B096_STAG_I048 -> N3_B096_SYNC_I048
+1e-18  N3_B096_STAG_I048 -> N3_B096_STAG_I048
+1e-24  N4_B096_STAG_I048 -> no candidate in current grid
+```
+
+So finite transport is not just a cosmetic latency term. It can change the
+selected architecture once the starvation-risk requirement becomes strict.
+
+For the 1% risk view:
+
+```text
+N2_B048_STAG_I012
+P(any starvation) ~= 1.378617e-3
+expected transport-induced stall extension ~= 1.72 microseconds
+physical qubits = 428,652
+```
+
+The expected stall-time penalty is tiny even though the run-level probability
+of at least one starvation event is measurable. This distinction is important:
+"probability of any stall" and "expected total stall duration" are different
+architecture metrics.
+
+At the 1e-12 target, the transport-aware search moves to:
+
+```text
+N3_B096_SYNC_I048
+P(any starvation) ~= 5.56e-18
+physical qubits = 570,078
+```
+
+The current grid has no design meeting the 1e-24 target after finite transport
+is included.
+
+This is the first result in the project where an explicit temporal interconnect
+model removes a previously feasible risk-target reference design.
+
 ## Scientific guardrails
 
 - Batch successes remain independent with constant p=0.89.
@@ -508,6 +667,10 @@ python -m experiments.multi_factory_pareto_search \
   --output-dir results/multi_factory_floorplanned
 
 python -m experiments.floorplan_model_comparison
+
+python -m experiments.transport_aware_pareto_search \
+  --config configs/litinski_multi_factory_transport_pareto_10mT.yaml \
+  --output-dir results/transport_aware_pareto
 ```
 
 ## Milestones
@@ -522,6 +685,8 @@ python -m experiments.floorplan_model_comparison
 - [x] Exact multi-factory shared-buffer Pareto search
 - [x] Layout-aware factory-to-buffer routing/interconnect model
 - [x] Routed/unrouted Pareto stability comparison
-- [ ] Greedy 2D packing / A* pathfinding floorplanner
-- [ ] Global placement optimization / route-capacity model
+- [x] Greedy 2D packing / A* pathfinding floorplanner
+- [x] Finite-capacity interconnect + transport latency
+- [ ] In-flight network-state / multi-event transport queue
+- [ ] Global placement optimization
 - [ ] Adaptive / dynamic factory provisioning
