@@ -31,6 +31,9 @@ multi-factory shared-buffer co-design
 
 routing/interconnect spatial model
   -> explicit tile cost for factory-to-buffer connectivity
+
+2D greedy floorplanner + A* pathfinder
+  -> explicit block placement, obstacles, corridor reuse, and candidate layouts
 ```
 
 ## Milestone 11: exact multi-factory shared-buffer Pareto search
@@ -316,6 +319,151 @@ factory is literally a 7-by-7 square.
 Transport latency, path crossings, contention, detailed factory polygons, and
 a full greedy 2D packing algorithm remain future refinements.
 
+## Milestone 13: genuine 2D floorplanner + pathfinder
+
+Milestone 12 deliberately used a simple Manhattan trunk-and-spur proxy. It was
+useful because it proved that routing assumptions can change the Pareto answer,
+but it did not actually place blocks or find paths around obstacles.
+
+Milestone 13 adds a deterministic 2D tile-grid floorplanner.
+
+### Exact-area geometry proxies
+
+Every logical block receives an explicit occupied-cell polygon with exactly the
+configured number of tiles:
+
+```text
+153-tile data block  -> compact raster inside a 13 x 12 envelope
+44-tile factory      -> compact raster inside a 7 x 7 envelope
+52-tile buffer       -> compact raster inside an 8 x 7 envelope
+104-tile buffer      -> compact raster inside an 11 x 10 envelope
+```
+
+The compact-raster polygons are **model assumptions**, not claims about the
+exact Litinski polygons. Their purpose is to let placement and routing operate
+on real occupied cells without silently changing block tile counts.
+
+### Greedy placement
+
+The data block is anchored at the origin and the shared buffer is placed beside
+it. Factories are then placed one at a time.
+
+Each candidate placement must satisfy the configured one-tile block clearance.
+The deterministic placement score is:
+
+```text
+1. minimum union of routing-corridor tiles
+2. minimum floorplan bounding-box area
+3. minimum new path length
+4. minimum anchor offset from the buffer
+5. deterministic coordinate tie-break
+```
+
+This is a genuine 2D placement search, though it is still greedy rather than a
+global placement optimizer.
+
+### Obstacle-aware A* routing
+
+Every factory is routed to the shared buffer with 4-neighbor A* search.
+
+Logical blocks are obstacles. Existing route cells are shareable, so the model
+can discover corridor reuse instead of charging every factory an independent
+linear trunk.
+
+The data-block-to-buffer path is also explicitly routed and visualized.
+
+For resource accounting, the named one-factory architecture remains the
+embedded connectivity baseline. The full paths are generated for every layout,
+but only routing-union tiles beyond the corresponding one-factory floorplan are
+charged as additional routing resources.
+
+### The important result: the Manhattan flip was model-sensitive
+
+For a 48-state buffer:
+
+```text
+factories   Manhattan extra route tiles   2D floorplan extra route tiles
+1           0                              0
+2           9                              1
+3           18                             2
+4           27                             11
+```
+
+The A* floorplanner packs early factories around the shared buffer and reuses
+short corridors. This materially lowers the routing penalty relative to the
+linear trunk proxy.
+
+For the 2-factory / 48-state architecture at d=27:
+
+```text
+unrouted                   427,194 physical qubits
+Manhattan Milestone 12     440,316 physical qubits
+2D floorplanner            428,652 physical qubits
+```
+
+That changes the Pareto interpretation again.
+
+The floorplanned reference designs are:
+
+```text
+maximum P(any starvation)   floorplanned reference
+1e-2                        N2_B048_STAG_I012
+1e-4                        N2_B048_SYNC_I024
+1e-6                        N3_B048_SYNC_I024
+1e-9                        N3_B048_STAG_I024
+1e-12                       N2_B096_STAG_I048
+1e-18                       N3_B096_STAG_I048
+1e-24                       N4_B096_STAG_I048
+```
+
+Within this first floorplanner, those reference policies match the unrouted
+Milestone 11 choices rather than the Manhattan Milestone 12 choices.
+
+That does **not** mean routing is irrelevant. It means the architecture decision
+is sensitive to routing geometry, and the simplistic linear trunk was too
+expensive for layouts where factories can be packed around the buffer.
+
+### Floorplan metrics
+
+Every candidate now reports:
+
+```text
+block placements (x, y, width, height)
+individual route lengths
+full routing-corridor union
+charged incremental routing tiles
+floorplan width / height
+bounding-box area
+active-tile packing density
+```
+
+A layout renderer can generate an actual 2D PNG:
+
+```bash
+python -m experiments.render_floorplan \
+  --config configs/litinski_multi_factory_floorplanned_pareto_10mT.yaml \
+  --candidate N2_B048_STAG_I012 \
+  --output results/floorplans/N2_B048_STAG_I012.png
+```
+
+### Three-model comparison
+
+The repository now preserves three routing layers:
+
+```text
+unrouted
+  -> no extra interconnect cost
+
+Manhattan trunk-and-spur
+  -> deterministic linear spatial proxy
+
+greedy 2D floorplanner + A*
+  -> explicit occupied cells + obstacle-aware paths
+```
+
+`experiments.floorplan_model_comparison` compares the reference architecture
+selected by all three models for every configured risk target.
+
 ## Scientific guardrails
 
 - Batch successes remain independent with constant p=0.89.
@@ -354,6 +502,12 @@ python -m experiments.routing_pareto_comparison \
   --unrouted-config configs/litinski_multi_factory_pareto_10mT.yaml \
   --routed-config configs/litinski_multi_factory_routed_pareto_10mT.yaml \
   --output-dir results/routing_impact
+
+python -m experiments.multi_factory_pareto_search \
+  --config configs/litinski_multi_factory_floorplanned_pareto_10mT.yaml \
+  --output-dir results/multi_factory_floorplanned
+
+python -m experiments.floorplan_model_comparison
 ```
 
 ## Milestones
@@ -366,7 +520,8 @@ python -m experiments.routing_pareto_comparison \
 - [x] Initial-buffer prefill policy study
 - [x] Automatic buffer/prefill Pareto policy search
 - [x] Exact multi-factory shared-buffer Pareto search
-- [ ] Layout-aware factory-to-buffer routing/interconnect model
-- [ ] Routed/unrouted Pareto stability comparison
-- [ ] Detailed 2D packing / pathfinding placement model
+- [x] Layout-aware factory-to-buffer routing/interconnect model
+- [x] Routed/unrouted Pareto stability comparison
+- [ ] Greedy 2D packing / A* pathfinding floorplanner
+- [ ] Global placement optimization / route-capacity model
 - [ ] Adaptive / dynamic factory provisioning

@@ -1,0 +1,182 @@
+experiment:
+  name: litinski_multi_factory_floorplanned_pareto_10mT
+  version: "0.1"
+
+workload:
+  logical_qubits: 100
+  t_count: 10000000
+
+hardware:
+  platform: superconducting_transmon
+
+  errors:
+    p_1q:
+      value: 1.0e-4
+      source: benchmark_assumption
+    p_2q:
+      value: 1.0e-3
+      source: protocol_reference_regime
+    p_measurement:
+      value: 1.0e-3
+      source: benchmark_assumption
+
+  timing_ns:
+    gate_1q: 25
+    gate_2q: 100
+    measurement: 500
+    code_cycle:
+      value: 1000
+      source: literature_benchmark_assumption
+
+qec:
+  target_logical_error: 1.0e-12
+
+  physical_error_threshold:
+    value: 1.0e-2
+    source: model_assumption
+
+  fit_A:
+    value: 0.1
+    source: literature_model
+
+  system_failure_budget:
+    max_total_failure_probability: 0.01
+
+  allowed_distances:
+    - 13
+    - 15
+    - 17
+    - 19
+    - 21
+    - 23
+    - 25
+    - 27
+    - 29
+    - 31
+
+factories:
+  type: magic_state_T
+
+  protocol:
+    name: litinski_116_to_12_compact
+    distillation_tiles: 44
+    output_states_per_batch: 12
+    protocol_steps_per_batch: 99
+    batch_success_probability: 0.89
+
+resource_model:
+  scope: exact_multi_factory_shared_buffer_pareto_with_2d_floorplan
+
+  tile_model:
+    physical_qubits_per_d2:
+      value: 2.0
+      source: literature_model
+
+  data_block:
+    tiles:
+      value: 153
+      source: literature
+
+  shared_buffer:
+    base_capacity_states: 12
+    base_storage_tiles: 13
+    scaling_model: linear_block_replication
+    source: model_assumption
+
+  multi_factory_layout:
+    model: shared_buffer_replaces_per_factory_output_storage
+    source: model_assumption
+    routing_interconnect: greedy_2d_floorplan_astar
+    note: >
+      The floorplanner creates exact-area compact raster proxies for the data
+      block, shared buffer, and factories; greedily places factories on a 2D
+      grid; and routes them to the shared buffer with obstacle-aware A*.
+
+  floorplanner:
+    model: greedy_compact_raster_astar_v1
+    source: model_assumption
+    block_shape_model: compact_raster_exact_area_v1
+    placement_objective: min_route_union_then_bbox_then_path_then_anchor_offset
+    clearance_tiles: 1
+    search_margin_tiles: 24
+    route_sharing: true
+    embedded_baseline_factory_count: 1
+    routing_accounting: incremental_over_embedded_one_factory_layout
+    transport_latency: unmodeled
+    congestion: unmodeled
+    note: >
+      The one-factory named layout remains the embedded connectivity baseline.
+      The floorplanner still routes and visualizes the full one-factory layout,
+      but resource accounting charges only route-union tiles beyond that
+      baseline. Compact raster polygons are deterministic exact-area proxies,
+      not claimed literature geometries.
+
+multi_factory_search:
+  model: exact_phase_aware_shared_buffer
+  event_order: consumer_then_factory
+
+  consumer:
+    nominal_runtime_seconds: 3600
+
+  startup_accounting:
+    model: phase_setup_plus_prefill_no_overlap_conservative
+    full_machine_active_during_startup: true
+
+  sensitivity:
+    factory_counts:
+      - 1
+      - 2
+      - 3
+      - 4
+    buffer_capacities_states:
+      - 48
+      - 96
+    initial_buffer_states:
+      - 12
+      - 24
+      - 48
+    phase_policies:
+      - synchronized
+      - even_staggered
+
+  feasibility:
+    max_conservative_campaign_failure_budget: 0.01
+
+  objectives:
+    - metric: physical_qubits
+      direction: min
+    - metric: conservative_startup_seconds
+      direction: min
+    - metric: log10_probability_any_starvation
+      direction: min
+
+  risk_target_views:
+    - 0.01
+    - 0.0001
+    - 0.000001
+    - 0.000000001
+    - 0.000000000001
+    - 0.000000000000000001
+    - 0.000000000000000000000001
+
+  reference_selection:
+    rule: minimum_physical_qubits_then_startup_then_starvation_risk
+
+optimizer:
+  method: exact_discrete_pareto_filter
+  objective: floorplanned_multi_factory_shared_buffer_co_design
+
+  constraints:
+    max_failure_probability: 0.01
+    max_runtime_seconds: 3600
+
+  pareto_metrics:
+    - physical_qubits
+    - conservative_startup_seconds
+    - log10_probability_any_starvation
+
+outputs:
+  save_runs_csv: true
+  save_pareto_csv: true
+  save_config_snapshot: true
+  save_figures: true
