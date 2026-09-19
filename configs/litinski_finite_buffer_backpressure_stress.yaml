@@ -85,7 +85,7 @@ finite_buffer_network_stress:
   model: finite_queue_blocking_after_service_v1
   source: model_assumption
 
-  event_count: 2000
+  event_count: 1000
   success_mode: all_success_worst_case
 
   injection_queue_capacity_states: 12
