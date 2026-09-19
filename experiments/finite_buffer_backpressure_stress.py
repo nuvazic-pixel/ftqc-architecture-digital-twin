@@ -218,6 +218,14 @@ def _run_scenario(
         "blocked_after_service_ticks": (
             summary.blocked_after_service_ticks
         ),
+        "backpressure_activated": any(
+            (
+                summary.blocked_after_service_ticks > 0,
+                summary.intermediate_queue_full_ticks > 0,
+                summary.factory_output_backpressure_ticks > 0,
+                summary.suppressed_factory_events > 0,
+            )
+        ),
         "blocked_after_service_cell_logical_steps": (
             summary.blocked_after_service_ticks
             / ticks_per_logical_step
