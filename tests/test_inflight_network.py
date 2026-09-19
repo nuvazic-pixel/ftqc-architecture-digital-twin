@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from experiments.inflight_network_stress import run, write_outputs
 from simulator.inflight_network import PersistentReservationNetwork
+
+
+@pytest.fixture(scope="module")
+def stress_result() -> dict[str, object]:
+    return run("configs/litinski_inflight_network_stress.yaml")
 
 
 def test_later_batch_sees_persistent_reservations_from_earlier_event():
@@ -79,14 +86,15 @@ def test_persistent_network_summary_detects_cross_event_inflight_state():
     assert summary.max_batch_latency_ticks > 4
 
 
-def test_real_floorplan_stress_shows_latency_sensitivity():
-    result = run("configs/litinski_inflight_network_stress.yaml")
+def test_real_floorplan_stress_shows_latency_sensitivity(
+    stress_result: dict[str, object],
+):
     rows = {
         (row["scenario"], row["hop_latency_logical_steps"]): row
-        for row in result["results"]
+        for row in stress_result["results"]
     }
 
-    assert result["row_count"] == 9
+    assert stress_result["row_count"] == 9
 
     for scenario in ("N2_B048_STAG", "N3_B048_STAG", "N4_B096_STAG"):
         fast = rows[(scenario, 1)]
@@ -105,9 +113,11 @@ def test_real_floorplan_stress_shows_latency_sensitivity():
         ]
 
 
-def test_stress_outputs_are_machine_readable(tmp_path: Path):
-    result = run("configs/litinski_inflight_network_stress.yaml")
-    paths = write_outputs(result, output_dir=tmp_path)
+def test_stress_outputs_are_machine_readable(
+    tmp_path: Path,
+    stress_result: dict[str, object],
+):
+    paths = write_outputs(stress_result, output_dir=tmp_path)
 
     assert set(paths) == {"json", "csv"}
     for path in paths.values():
