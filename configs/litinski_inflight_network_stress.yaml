@@ -124,7 +124,7 @@ optimizer:
     max_runtime_seconds: 3600
 
   pareto_metrics:
-    - max_inflight_batches_at_event_boundary
+    - max_carryover_batches_at_event_boundary
     - busiest_cell_utilization_during_generation_horizon
     - drain_tail_ticks
 
