@@ -38,6 +38,29 @@ def test_mixed_direction_pareto_dominance():
     assert not dominates(weak, strong, objectives)
 
 
+
+def test_log_space_objective_keeps_small_absolute_improvements_at_large_magnitude():
+    objectives = (
+        Objective("hardware", "min"),
+        Objective("startup", "min"),
+        Objective("survival_log10", "max"),
+    )
+
+    better = {
+        "candidate_id": "better",
+        "hardware": 100,
+        "startup": 1.0,
+        "survival_log10": -70000.000000,
+    }
+    worse = {
+        "candidate_id": "worse",
+        "hardware": 100,
+        "startup": 1.0,
+        "survival_log10": -70000.000001,
+    }
+
+    assert dominates(better, worse, objectives)
+
 def test_batch_quantization_creates_genuinely_dominated_prefill_policies(
     policy_result: dict[str, object],
 ):
