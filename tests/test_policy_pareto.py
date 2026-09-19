@@ -6,7 +6,7 @@ import pytest
 
 from experiments.plot_policy_pareto import render_policy_pareto_plots
 from experiments.policy_pareto_search import run, write_outputs
-from metrics.pareto import Objective, dominates, pareto_partition
+from metrics.pareto import Objective, ParetoError, dominates, pareto_partition
 
 
 @pytest.fixture(scope="module")
@@ -119,5 +119,5 @@ def test_policy_pareto_visualization_writes_two_pngs(
 
 
 def test_pareto_partition_rejects_no_objectives():
-    with pytest.raises(Exception):
+    with pytest.raises(ParetoError):
         pareto_partition([{"candidate_id": "x", "value": 1}], [])
