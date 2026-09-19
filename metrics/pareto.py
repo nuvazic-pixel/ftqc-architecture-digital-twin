@@ -16,8 +16,8 @@ class ParetoError(ValueError):
 class Objective:
     metric: str
     direction: Direction
-    rel_tol: float = 1e-12
-    abs_tol: float = 1e-15
+    rel_tol: float = 0.0
+    abs_tol: float = 1e-12
 
     def __post_init__(self) -> None:
         if not self.metric:
