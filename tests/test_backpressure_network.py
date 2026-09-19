@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -133,33 +132,48 @@ def test_outputs_are_machine_readable(
         assert output.stat().st_size > 0
 
 
-def test_discover_finite_buffer_backpressure_profile(
+def test_current_floorplans_do_not_activate_queue_backpressure(
     stress_result: dict[str, object],
 ):
-    profile = [
-        {
-            key: row[key]
-            for key in (
-                "scenario",
-                "intermediate_queue_capacity_states",
-                "shared_route_cells",
-                "suppressed_factory_events",
-                "generated_batch_fraction",
-                "blocked_after_service_ticks",
-                "intermediate_queue_full_ticks",
-                "factory_output_backpressure_ticks",
-                "max_network_states",
-                "max_carryover_batches_at_event_boundary",
-                "fraction_event_boundaries_with_carryover",
-                "mean_batch_latency_logical_steps",
-                "max_batch_latency_logical_steps",
-                "drain_tail_logical_steps",
-                "busiest_cell_utilization_during_generation_horizon",
-            )
-        }
-        for row in stress_result["results"]
-    ]
+    rows = list(stress_result["results"])
 
-    raise AssertionError(
-        json.dumps(profile, indent=2, sort_keys=True)
+    # The current greedy floorplans route each factory through disjoint corridor
+    # cells. With equal-rate pipelined hops, a one-state intermediate queue is
+    # already enough and the finite-buffer mechanism remains dormant.
+    assert all(row["shared_route_cells"] == 0 for row in rows)
+    assert all(row["blocked_after_service_ticks"] == 0 for row in rows)
+    assert all(row["intermediate_queue_full_ticks"] == 0 for row in rows)
+    assert all(row["suppressed_factory_events"] == 0 for row in rows)
+    assert all(row["generated_batch_fraction"] == 1.0 for row in rows)
+
+
+def test_queue_capacity_sweep_is_invariant_for_current_floorplans(
+    stress_result: dict[str, object],
+):
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for row in stress_result["results"]:
+        grouped.setdefault(str(row["scenario"]), []).append(row)
+
+    invariant_metrics = (
+        "blocked_after_service_ticks",
+        "intermediate_queue_full_ticks",
+        "factory_output_backpressure_ticks",
+        "suppressed_factory_events",
+        "generated_batch_fraction",
+        "max_carryover_batches_at_event_boundary",
+        "fraction_event_boundaries_with_carryover",
+        "mean_batch_latency_logical_steps",
+        "max_batch_latency_logical_steps",
+        "busiest_cell_utilization_during_generation_horizon",
     )
+
+    for rows in grouped.values():
+        assert {
+            row["intermediate_queue_capacity_states"]
+            for row in rows
+        } == {1, 2, 4, 8}
+
+        baseline = rows[0]
+        for row in rows[1:]:
+            for metric in invariant_metrics:
+                assert row[metric] == baseline[metric]
