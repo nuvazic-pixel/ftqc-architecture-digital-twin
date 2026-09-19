@@ -572,6 +572,57 @@ How much expected runtime and STV does that delay add?
 This explicitly tests whether the spatially cheapest floorplan is also the
 temporally best one.
 
+### First transport-aware Pareto result
+
+Finite transport latency leaves the moderate-risk reference policies stable:
+
+```text
+maximum P(any starvation)   floorplan zero-latency   finite-capacity transport
+1e-2                        N2_B048_STAG_I012        N2_B048_STAG_I012
+1e-4                        N2_B048_SYNC_I024        N2_B048_SYNC_I024
+1e-6                        N3_B048_SYNC_I024        N3_B048_SYNC_I024
+```
+
+But the strict-risk region changes:
+
+```text
+1e-9   N3_B048_STAG_I024 -> N3_B048_SYNC_I048
+1e-12  N2_B096_STAG_I048 -> N3_B096_SYNC_I048
+1e-18  N3_B096_STAG_I048 -> N3_B096_STAG_I048
+1e-24  N4_B096_STAG_I048 -> no candidate in current grid
+```
+
+So finite transport is not just a cosmetic latency term. It can change the
+selected architecture once the starvation-risk requirement becomes strict.
+
+For the 1% risk view:
+
+```text
+N2_B048_STAG_I012
+P(any starvation) ~= 1.378617e-3
+expected transport-induced stall extension ~= 1.72 microseconds
+physical qubits = 428,652
+```
+
+The expected stall-time penalty is tiny even though the run-level probability
+of at least one starvation event is measurable. This distinction is important:
+"probability of any stall" and "expected total stall duration" are different
+architecture metrics.
+
+At the 1e-12 target, the transport-aware search moves to:
+
+```text
+N3_B096_SYNC_I048
+P(any starvation) ~= 5.56e-18
+physical qubits = 570,078
+```
+
+The current grid has no design meeting the 1e-24 target after finite transport
+is included.
+
+This is the first result in the project where an explicit temporal interconnect
+model removes a previously feasible risk-target reference design.
+
 ## Scientific guardrails
 
 - Batch successes remain independent with constant p=0.89.
