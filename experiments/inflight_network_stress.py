@@ -115,17 +115,17 @@ def _run_scenario(
         },
         "generated_batches": summary.generated_batches,
         "generated_states": summary.generated_states,
-        "max_inflight_batches_at_event_boundary": (
-            summary.max_inflight_batches_at_event_boundary
+        "max_carryover_batches_at_event_boundary": (
+            summary.max_carryover_batches_at_event_boundary
         ),
-        "event_boundaries_with_inflight": (
-            summary.event_boundaries_with_inflight
+        "event_boundaries_with_carryover": (
+            summary.event_boundaries_with_carryover
         ),
-        "fraction_event_boundaries_with_inflight": (
-            summary.fraction_event_boundaries_with_inflight
+        "fraction_event_boundaries_with_carryover": (
+            summary.fraction_event_boundaries_with_carryover
         ),
-        "inflight_batches_after_last_generation": (
-            summary.inflight_batches_after_last_generation
+        "inflight_batches_at_generation_horizon_end": (
+            summary.inflight_batches_at_generation_horizon_end
         ),
         "drain_tail_ticks": summary.drain_tail_ticks,
         "drain_tail_logical_steps": (
