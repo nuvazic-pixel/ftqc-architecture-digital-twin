@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import pytest
 
@@ -130,4 +131,6 @@ def test_discover_persistent_network_stress_profile(
     stress_result: dict[str, object],
 ):
     # Temporary discovery assertion; replace with locked regression values.
-    assert False, stress_result["results"]
+    raise AssertionError(
+        json.dumps(stress_result["results"], indent=2, sort_keys=True)
+    )
