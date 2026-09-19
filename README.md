@@ -768,14 +768,140 @@ the state space is now much larger than buffer occupancy alone.
 Waiting nodes also have unbounded temporary storage in this milestone. Finite
 node-buffer capacity and backpressure remain future refinements.
 
+## Milestone 16: finite node buffers + blocking backpressure
+
+Milestone 15 allowed a magic state to wait indefinitely between route hops.
+Milestone 16 replaces that unlimited waiting space with explicit finite queues.
+
+### Finite routed queues
+
+Each factory path now contains:
+
+```text
+factory output staging
+        ↓
+finite injection queue
+        ↓
+route-cell server
+        ↓
+finite intermediate queue
+        ↓
+next route-cell server
+        ↓
+...
+        ↓
+shared magic-state buffer boundary
+```
+
+The factory output staging record holds at most one completed batch. A later
+nominal factory completion is suppressed if the previous batch has not drained
+into the injection queue; the simulator therefore does not hide backpressure in
+an unbounded source buffer.
+
+### Blocking-after-service semantics
+
+If a token finishes a route-cell hop while its downstream queue is full, the
+token remains in the physical route cell.
+
+That cell stays occupied until downstream space becomes available:
+
+```text
+downstream queue full
+        ↓
+completed token holds route cell
+        ↓
+upstream cannot reuse that cell
+        ↓
+queues can propagate backward
+        ↓
+factory output can eventually stall
+```
+
+No token is intentionally dropped.
+
+Shared route cells use deterministic round-robin arbitration.
+
+### First result: persistent in-flight state is not the same as congestion
+
+The real greedy floorplans were swept with intermediate queue capacities:
+
+```text
+1, 2, 4, 8 states
+```
+
+for the Milestone 15 stress points:
+
+```text
+N2 / B48 / staggered / 4-step hops
+N3 / B48 / staggered / 4-step hops
+N4 / B96 / staggered / 2-step hops
+N4 / B96 / staggered / 4-step hops
+```
+
+Across this grid, finite queue capacity does **not** change the result:
+
+```text
+shared factory-route cells          = 0
+blocked-after-service ticks         = 0
+intermediate queue-full ticks       = 0
+suppressed factory events           = 0
+generated batch fraction            = 1.0
+```
+
+Even a one-state intermediate queue is sufficient for these layouts.
+
+This is an important negative result. Milestone 15 observed persistent
+cross-event batches in the N3/N4 slow-transport cases, but Milestone 16 shows
+that the persistence is caused by end-to-end propagation latency and event
+cadence, not queue congestion in the current floorplans.
+
+```text
+in flight across an event boundary
+            !=
+congested / backpressured
+```
+
+The 4-factory layout can therefore retain its long-route carryover without any
+finite intermediate queue filling up.
+
+### Backpressure mechanism validation
+
+Synthetic shared-bottleneck regression tests deliberately merge two factory
+routes onto one physical route cell.
+
+Those tests produce finite-queue blocking and verify that increasing queue
+capacity never increases blocking in the controlled topology. They also verify
+that all generated states are eventually delivered and that a severely blocked
+factory completion is suppressed instead of being stored in an implicit
+unbounded queue.
+
+The synthetic topology is a simulator validation fixture, not a claimed FTQC
+layout result.
+
+### Architectural implication
+
+The next bottleneck is now clearer.
+
+The current floorplanner minimizes spatial route cost and happens to return
+factory routes with no shared corridor cells in the tested reference layouts.
+Finite-buffer backpressure will only influence architecture selection once
+placement/routing produces actual shared bottlenecks or finite destination
+admission is coupled into the network.
+
+That makes route-sharing-aware global placement a higher-value next step than
+arbitrarily shrinking queue capacity further.
+
 ## Scientific guardrails
 
 - Batch successes remain independent with constant p=0.89.
 - Even staggering assumes deterministic, evenly spaced factory phases.
 - Phase setup + prefill is a conservative non-overlap startup model.
 - Shared-buffer storage replaces per-factory output storage in this milestone.
-- Additional multi-factory routing/interconnect tiles are still **unmodeled**.
-- Physical-qubit counts are therefore optimistic architecture-model lower bounds.
+- Multi-factory routing tiles are charged by the current 2D floorplanner model,
+  but the compact block polygons and routing geometry remain explicit model
+  assumptions rather than hardware-calibrated layouts.
+- Physical-qubit counts remain architecture-model estimates rather than
+  experimentally validated hardware requirements.
 - The event-order convention is explicit and can be sensitivity-tested later.
 - The frontier is exact only for the configured discrete design grid.
 - Nominal campaign STV does not include stochastic post-starvation runtime extension.
@@ -783,6 +909,10 @@ node-buffer capacity and backpressure remain future refinements.
   scheduler, but waiting nodes currently have unbounded temporary storage.
 - The all-success persistent-network benchmark is a structural worst-case load
   test, not a run-level probability estimate.
+- Finite intermediate queue capacity is now modeled, but destination-buffer
+  admission/backpressure is not yet coupled into the persistent network.
+- The current real floorplans have no shared factory-route cells; the
+  shared-bottleneck backpressure test is explicitly synthetic.
 
 ## Quick start
 
@@ -824,6 +954,10 @@ python -m experiments.transport_aware_pareto_search \
 python -m experiments.inflight_network_stress \
   --config configs/litinski_inflight_network_stress.yaml \
   --output-dir results/inflight_network_stress
+
+python -m experiments.finite_buffer_backpressure_stress \
+  --config configs/litinski_finite_buffer_backpressure_stress.yaml \
+  --output-dir results/finite_buffer_backpressure
 ```
 
 ## Milestones
@@ -841,5 +975,6 @@ python -m experiments.inflight_network_stress \
 - [x] Greedy 2D packing / A* pathfinding floorplanner
 - [x] Finite-capacity interconnect + transport latency
 - [x] Persistent in-flight network-state / multi-event transport queue
+- [x] Finite node buffers / blocking backpressure
 - [ ] Global placement optimization
 - [ ] Adaptive / dynamic factory provisioning
