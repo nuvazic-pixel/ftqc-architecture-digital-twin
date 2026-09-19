@@ -1,0 +1,133 @@
+experiment:
+  name: litinski_persistent_inflight_network_stress
+  version: "0.1"
+
+workload:
+  logical_qubits: 100
+  t_count: 10000000
+
+hardware:
+  platform: superconducting_transmon
+
+  errors:
+    p_1q:
+      value: 1.0e-4
+      source: benchmark_assumption
+    p_2q:
+      value: 1.0e-3
+      source: protocol_reference_regime
+    p_measurement:
+      value: 1.0e-3
+      source: benchmark_assumption
+
+  timing_ns:
+    gate_1q: 25
+    gate_2q: 100
+    measurement: 500
+    code_cycle:
+      value: 1000
+      source: literature_benchmark_assumption
+
+qec:
+  target_logical_error: 1.0e-12
+
+  physical_error_threshold:
+    value: 1.0e-2
+    source: model_assumption
+
+  fit_A:
+    value: 0.1
+    source: literature_model
+
+  allowed_distances:
+    - 13
+    - 15
+    - 17
+    - 19
+    - 21
+    - 23
+    - 25
+    - 27
+    - 29
+    - 31
+
+factories:
+  type: magic_state_T
+  protocol:
+    name: litinski_116_to_12_compact
+    distillation_tiles: 44
+    output_states_per_batch: 12
+    protocol_steps_per_batch: 99
+    batch_success_probability: 0.89
+
+resource_model:
+  scope: persistent_inflight_network_stress
+
+  data_block:
+    tiles:
+      value: 153
+      source: literature
+
+  shared_buffer:
+    base_capacity_states: 12
+    base_storage_tiles: 13
+    scaling_model: linear_block_replication
+    source: model_assumption
+
+  floorplanner:
+    model: greedy_compact_raster_astar_v1
+    source: model_assumption
+    clearance_tiles: 1
+    search_margin_tiles: 24
+
+inflight_network_stress:
+  model: persistent_absolute_time_reservation_v1
+  source: model_assumption
+
+  event_count: 2000
+  success_mode: all_success_worst_case
+
+  lane_capacity_states_per_tick: 1
+
+  hop_latency_logical_steps:
+    - 1
+    - 2
+    - 4
+
+  scenarios:
+    - name: N2_B048_STAG
+      factory_count: 2
+      buffer_capacity_states: 48
+      phase_policy: even_staggered
+
+    - name: N3_B048_STAG
+      factory_count: 3
+      buffer_capacity_states: 48
+      phase_policy: even_staggered
+
+    - name: N4_B096_STAG
+      factory_count: 4
+      buffer_capacity_states: 96
+      phase_policy: even_staggered
+
+  note: >
+    This milestone is a deterministic all-success network stress test, not a
+    stochastic starvation probability. Even-staggered timing uses a substep
+    resolution of 1/factory_count logical time steps so the 99-step factory
+    period remains exact without floating-point phase times.
+
+optimizer:
+  method: none
+  objective: persistent_network_state_validation
+
+  constraints:
+    max_runtime_seconds: 3600
+
+  pareto_metrics:
+    - max_inflight_batches_at_event_boundary
+    - busiest_cell_utilization_during_generation_horizon
+    - drain_tail_ticks
+
+outputs:
+  save_runs_csv: true
+  save_config_snapshot: true
