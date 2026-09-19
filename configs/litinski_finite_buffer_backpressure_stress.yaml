@@ -1,0 +1,148 @@
+experiment:
+  name: litinski_finite_buffer_backpressure_stress
+  version: "0.1"
+
+workload:
+  logical_qubits: 100
+  t_count: 10000000
+
+hardware:
+  platform: superconducting_transmon
+
+  errors:
+    p_1q:
+      value: 1.0e-4
+      source: benchmark_assumption
+    p_2q:
+      value: 1.0e-3
+      source: protocol_reference_regime
+    p_measurement:
+      value: 1.0e-3
+      source: benchmark_assumption
+
+  timing_ns:
+    gate_1q: 25
+    gate_2q: 100
+    measurement: 500
+    code_cycle:
+      value: 1000
+      source: literature_benchmark_assumption
+
+qec:
+  target_logical_error: 1.0e-12
+
+  physical_error_threshold:
+    value: 1.0e-2
+    source: model_assumption
+
+  fit_A:
+    value: 0.1
+    source: literature_model
+
+  allowed_distances:
+    - 13
+    - 15
+    - 17
+    - 19
+    - 21
+    - 23
+    - 25
+    - 27
+    - 29
+    - 31
+
+factories:
+  type: magic_state_T
+
+  protocol:
+    name: litinski_116_to_12_compact
+    distillation_tiles: 44
+    output_states_per_batch: 12
+    protocol_steps_per_batch: 99
+    batch_success_probability: 0.89
+
+resource_model:
+  scope: finite_buffer_backpressure_network_stress
+
+  data_block:
+    tiles:
+      value: 153
+      source: literature
+
+  shared_buffer:
+    base_capacity_states: 12
+    base_storage_tiles: 13
+    scaling_model: linear_block_replication
+    source: model_assumption
+
+  floorplanner:
+    model: greedy_compact_raster_astar_v1
+    source: model_assumption
+    clearance_tiles: 1
+    search_margin_tiles: 24
+
+finite_buffer_network_stress:
+  model: finite_queue_blocking_after_service_v1
+  source: model_assumption
+
+  event_count: 1000
+  success_mode: all_success_worst_case
+
+  injection_queue_capacity_states: 12
+  injection_bandwidth_states_per_tick: 12
+
+  intermediate_queue_capacity_states:
+    - 1
+    - 2
+    - 4
+    - 8
+
+  max_drain_factory_periods: 64
+
+  scenarios:
+    - name: N2_B048_STAG_H4
+      factory_count: 2
+      buffer_capacity_states: 48
+      phase_policy: even_staggered
+      hop_latency_logical_steps: 4
+
+    - name: N3_B048_STAG_H4
+      factory_count: 3
+      buffer_capacity_states: 48
+      phase_policy: even_staggered
+      hop_latency_logical_steps: 4
+
+    - name: N4_B096_STAG_H2
+      factory_count: 4
+      buffer_capacity_states: 96
+      phase_policy: even_staggered
+      hop_latency_logical_steps: 2
+
+    - name: N4_B096_STAG_H4
+      factory_count: 4
+      buffer_capacity_states: 96
+      phase_policy: even_staggered
+      hop_latency_logical_steps: 4
+
+  note: >
+    This benchmark reuses the Milestone 15 all-success stress points and varies
+    only finite intermediate queue capacity. A route cell uses
+    blocking-after-service semantics: if its downstream finite queue is full,
+    the completed token remains in the cell and blocks upstream reuse.
+    Factory output has one batch staging record; a later nominal completion is
+    suppressed if the previous batch has not drained into the finite injection
+    queue. No state is intentionally dropped.
+
+optimizer:
+  method: none
+  objective: finite_buffer_backpressure_validation
+
+  pareto_metrics:
+    - suppressed_factory_events
+    - blocked_after_service_ticks
+    - drain_tail_ticks
+    - max_network_states
+
+outputs:
+  save_runs_csv: true
+  save_config_snapshot: true
