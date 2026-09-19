@@ -52,7 +52,9 @@ def test_shared_single_cell_serializes_two_simultaneous_batches_fairly():
     assert schedule.completion_steps[2] == 24
 
 
-def test_transport_risk_is_not_better_than_zero_latency_floorplan_for_same_policy():
+def test_transport_risk_is_not_better_than_zero_latency_floorplan_for_same_policy(
+    transport_result: dict[str, object],
+):
     floorplan_result = run_floorplan(
         "configs/litinski_multi_factory_floorplanned_pareto_10mT.yaml"
     )
@@ -61,12 +63,9 @@ def test_transport_risk_is_not_better_than_zero_latency_floorplan_for_same_polic
         for row in floorplan_result["feasible_candidates"]
     }
 
-    transport = run(
-        "configs/litinski_multi_factory_transport_pareto_10mT.yaml"
-    )
     transport_candidates = {
         row["candidate_id"]: row
-        for row in transport["feasible_candidates"]
+        for row in transport_result["feasible_candidates"]
     }
 
     candidate_id = "N2_B048_STAG_I012"
