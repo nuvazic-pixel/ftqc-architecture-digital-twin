@@ -104,6 +104,19 @@ prefill_policy:
       - 0.75
       - 1.0
 
+optimizer:
+  method: exact_discrete_pareto_filter
+  objective: hardware_startup_starvation_pareto
+
+  constraints:
+    max_failure_probability: 0.01
+    max_runtime_seconds: 3600
+
+  pareto_metrics:
+    - physical_qubits
+    - expected_prefill_seconds
+    - log10_probability_no_starvation
+
 policy_search:
   method: exact_discrete_pareto_filter
 
