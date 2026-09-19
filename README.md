@@ -266,6 +266,43 @@ risk-target reference-policy changes
 This lets us test whether a previously attractive architecture survives its
 explicit spatial interconnect cost instead of assuming that it does.
 
+### First routed Pareto result: the preferred architecture can flip
+
+The first comparison does **not** preserve every Milestone 11 reference design.
+
+For moderate risk targets, explicit routing cost favors fewer factories and a
+larger shared buffer:
+
+```text
+risk target   unrouted reference        routed reference
+1e-2          N2_B048_STAG_I012         N1_B096_SYNC_I024
+1e-4          N2_B048_SYNC_I024         N1_B096_SYNC_I048
+1e-6          N3_B048_SYNC_I024         N2_B096_SYNC_I048
+1e-9          N3_B048_STAG_I024         N2_B096_SYNC_I048
+```
+
+For the stricter targets, the reference designs remain unchanged:
+
+```text
+1e-12         N2_B096_STAG_I048
+1e-18         N3_B096_STAG_I048
+1e-24         N4_B096_STAG_I048
+```
+
+This is a cross-layer result: once interconnect space is charged explicitly,
+"more factories with a smaller buffer" can lose to "fewer factories with a
+larger buffer" even though the stochastic production model itself has not
+changed.
+
+For example, the routed 2-factory / 48-state architecture at d=27 adds 9
+routing tiles = 13,122 physical qubits, raising its footprint from 427,194 to
+440,316 physical qubits. The one-factory / 96-state architecture keeps the
+embedded one-factory routing baseline and remains at 438,858 physical qubits.
+
+The result should be interpreted as **model sensitivity**, not a final floorplan
+claim: the exact geometry is still the explicit Manhattan lower-bound
+assumption described below.
+
 ### Routing-model provenance
 
 The **need** for routed connectivity is literature-grounded. The exact
