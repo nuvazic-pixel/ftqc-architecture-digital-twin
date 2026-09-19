@@ -24,123 +24,173 @@ initial-buffer prefill policy
   -> startup latency versus starvation-risk trade-off
 
 automatic policy Pareto search
-  -> multi-objective co-design over hardware, startup, and risk
+  -> multi-objective buffer/prefill co-design
+
+multi-factory shared-buffer co-design
+  -> exact phase-aware risk across factory count, buffer, and startup
 ```
 
-## Milestone 10: automatic policy Pareto search
+## Milestone 11: exact multi-factory shared-buffer Pareto search
 
-Milestone 10 stops treating the 20 buffer/prefill policies as a table that a
-human must inspect manually. Every candidate is now automatically classified
-as Pareto-optimal or dominated.
+Milestone 11 introduces 1-4 independent 116-to-12 factories feeding one bounded
+shared magic-state buffer.
 
-The search jointly optimizes:
+The candidate grid jointly varies:
 
 ```text
-physical qubits                         minimize
-expected prefill latency                minimize
-log10 P(no starvation)                  maximize
+factory count        1, 2, 3, 4
+buffer capacity      48, 96 states
+initial buffer       12, 24, 48 states
+phase policy         synchronized / even_staggered
 ```
 
-The log survival metric is deliberate. For tiny buffers, linear
-`P(any starvation)` can round to exactly 1.0 even though the no-starvation
-probability is mathematically nonzero. Pareto filtering therefore operates on
-the underflow-safe log-space quantity while still reporting ordinary
-probabilities for interpretation and plots.
+The one-factory case uses only the synchronized policy, leaving 42 total
+candidates.
 
-### Batch quantization and overflow make the frontier non-monotonic
+### Phase policy is now an architecture variable
 
-The automatic search exposed a more interesting effect than the initial
-hand-written expectation.
-
-A 12-state buffer uses one successful factory batch for every non-zero prefill
-request from 25% through 100%. It is tempting to assume that the fullest policy
-must therefore dominate all smaller fills.
-
-The exact search rejects that shortcut.
-
-`B012_F025` is genuinely dominated by `B012_F100`, but `B012_F050`
-remains Pareto-optimal in the current bounded-buffer model.
-
-The reason is architectural: increasing initial occupancy can also increase
-early overflow and change the subsequent buffer-state distribution. Equal
-prefill batch count and equal hardware therefore do **not** guarantee monotonic
-starvation risk.
-
-This is precisely why the optimizer computes dominance from the full dynamic
-model instead of encoding a rule such as "more prefill is always better."
-
-### Constraint-driven reference policies
-
-The Pareto engine does not invent a single universal "best" design. Instead it
-can answer explicit risk-target questions using a deterministic selection rule:
+Two timing policies are modeled:
 
 ```text
-minimum physical qubits
-then minimum expected prefill latency
-then minimum starvation probability
+synchronized:
+  all factories finish together once per protocol batch
+  arrival count per event ~ Binomial(N_factory, 0.89)
+
+even_staggered:
+  factory completion phases are evenly spaced
+  one factory completes per event
+  each event ~ Bernoulli(0.89)
 ```
 
-For the current search grid:
+For staggered operation, the phase-establishment time is explicit:
 
 ```text
-maximum P(any starvation)   reference policy
-1e-1                        B096_F025
-1e-2                        B096_F025
-1e-3                        B096_F050
-1e-4                        B096_F050
-1e-5                        no candidate in current grid
+phase setup = batch_duration * (N_factory - 1) / N_factory
 ```
 
-Policy IDs encode buffer and fill:
+The startup accounting conservatively adds phase setup and expected prefill
+latency rather than assuming they overlap for free.
+
+### Causal event ordering
+
+The multi-factory model uses:
 
 ```text
-B096_F025 = 96-state buffer, 25% prefill
-B096_F050 = 96-state buffer, 50% prefill
+consumer demand accrued since previous event
+  -> service from existing buffer
+  -> detect starvation if demand is unmet
+  -> admit newly completed factory output
 ```
 
-This makes the recommendation traceable to an explicit risk requirement rather
-than to an opaque weighted score.
+This is intentionally more causal than allowing a batch completing at the end
+of an interval to satisfy demand that occurred earlier in that interval.
 
-### Visualizing the frontier
+### Phase staggering can buy risk reduction without more qubits
 
-The plotting experiment creates two separate figures:
+For 2 factories, a 48-state buffer, 12 initial states, and d=27:
 
 ```text
-results/policy_pareto/pareto_qubits_vs_risk.png
-results/policy_pareto/pareto_prefill_vs_risk.png
+policy          physical qubits   startup      P(any starvation)
+synchronized       427,194        ~2.706 ms    ~1.2146e-2
+even_staggered     427,194        ~2.838 ms    ~1.3785e-3
 ```
 
-Both use a logarithmic starvation-risk axis and distinguish dominated policies
-from Pareto-frontier policies.
+The physical footprint is identical. A small increase in conservative startup
+latency reduces starvation risk by almost an order of magnitude under the
+current model.
 
-The first shows the hardware/risk trade-off. The second shows startup/risk.
-Together they expose all three objectives without hiding one inside a weighted
-scalar score.
+That is a scheduling/architecture effect, not a hardware-count effect.
 
-### Machine-readable outputs
+### Constraint-driven reference designs
 
-The search also writes:
+The Pareto objectives are:
 
 ```text
-policy_pareto.json
-policy_candidates.csv
-policy_pareto.csv
+physical qubits                     minimize
+conservative startup latency         minimize
+log10 P(any starvation)              minimize
 ```
 
-so later multi-factory optimization and paper figures can consume the exact
-same candidate set.
+The current discrete grid gives the following reference designs:
+
+```text
+maximum P(any starvation)   reference
+1e-2                        N2_B048_STAG_I012
+1e-4                        N2_B048_SYNC_I024
+1e-6                        N3_B048_SYNC_I024
+1e-9                        N3_B048_STAG_I024
+1e-12                       N2_B096_STAG_I048
+1e-18                       N3_B096_STAG_I048
+1e-24                       N4_B096_STAG_I048
+```
+
+For example:
+
+```text
+N2_B048_STAG_I012
+= 2 factories
+= 48-state shared buffer
+= even-staggered phases
+= 12 initial magic states
+```
+
+No weighted score chooses these policies. A risk constraint is supplied first;
+the reference is then selected by minimum physical qubits, minimum conservative
+startup latency, and finally minimum starvation probability.
+
+### Reliability and distance are coupled to startup
+
+Code distance is selected separately for every candidate.
+
+The model tests each allowed distance against:
+
+```text
+nominal 3600 s execution
++ conservative startup time
+```
+
+under the whole-machine logical-failure budget. Startup is therefore not
+treated as reliability-free.
+
+### New numerical guardrail for very small risk
+
+Earlier single-factory milestones needed log-space **survival** because
+no-starvation probability could be fantastically small.
+
+Multi-factory designs can enter the opposite regime where starvation
+probability is tiny.
+
+Milestone 11 therefore uses an explicit absorbing starvation state and reads
+`P(any starvation)` directly from that state instead of calculating
+`1 - P(no starvation)`. This avoids catastrophic cancellation for risks down
+to roughly 1e-25 in the current grid.
+
+### Visualizations and outputs
+
+The experiment writes:
+
+```text
+multi_factory_pareto.json
+multi_factory_candidates.csv
+multi_factory_pareto.csv
+
+multi_factory_qubits_vs_risk.png
+multi_factory_startup_vs_risk.png
+```
+
+Both plots use logarithmic starvation-risk axes.
 
 ## Scientific guardrails
 
-- Pareto dominance is applied only to explicit configured objectives.
-- No hidden objective weights or arbitrary aggregate score are used.
-- Log-space survival prevents numerical underflow from changing dominance.
-- Risk-target reference policies are selected only after the risk constraint is
-  supplied explicitly.
-- Prefill and buffer layout assumptions from earlier milestones remain visible.
-- The frontier is exact for the current discrete candidate grid, not proof of a
-  global continuous optimum.
-- Multi-factory synchronization remains outside this milestone.
+- Batch successes remain independent with constant p=0.89.
+- Even staggering assumes deterministic, evenly spaced factory phases.
+- Phase setup + prefill is a conservative non-overlap startup model.
+- Shared-buffer storage replaces per-factory output storage in this milestone.
+- Additional multi-factory routing/interconnect tiles are still **unmodeled**.
+- Physical-qubit counts are therefore optimistic architecture-model lower bounds.
+- The event-order convention is explicit and can be sensitivity-tested later.
+- The frontier is exact only for the configured discrete design grid.
+- Nominal campaign STV does not include stochastic post-starvation runtime extension.
 
 ## Quick start
 
@@ -152,13 +202,13 @@ python -m venv .venv
 pip install -e ".[dev]"
 pytest
 
-python -m experiments.policy_pareto_search \
-  --config configs/litinski_policy_pareto_10mT.yaml \
-  --output-dir results/policy_pareto
+python -m experiments.multi_factory_pareto_search \
+  --config configs/litinski_multi_factory_pareto_10mT.yaml \
+  --output-dir results/multi_factory_pareto
 
-python -m experiments.plot_policy_pareto \
-  --config configs/litinski_policy_pareto_10mT.yaml \
-  --output-dir results/policy_pareto
+python -m experiments.plot_multi_factory_pareto \
+  --config configs/litinski_multi_factory_pareto_10mT.yaml \
+  --output-dir results/multi_factory_pareto
 ```
 
 ## Milestones
@@ -169,6 +219,7 @@ python -m experiments.plot_policy_pareto \
 - [x] Explicit magic-state buffer and consumer/starvation dynamics
 - [x] Exact finite-state buffer-risk characterization
 - [x] Initial-buffer prefill policy study
-- [ ] Automatic buffer/prefill Pareto policy search
-- [ ] Multi-factory space-time trade-off search
-- [ ] Adaptive policy / dynamic factory provisioning
+- [x] Automatic buffer/prefill Pareto policy search
+- [ ] Exact multi-factory shared-buffer Pareto search
+- [ ] Layout-aware factory-to-buffer routing/interconnect model
+- [ ] Adaptive / dynamic factory provisioning
