@@ -2,115 +2,114 @@
 
 A reproducible simulator for fault-tolerant quantum-computing (FTQC) architecture co-design.
 
-## Model layers
-
-The repository preserves each scientific layer instead of rewriting earlier
-results:
+## Current model stack
 
 ```text
 historical regression baseline
   -> stability checks
 
 protocol-consistent Litinski benchmark
-  -> named deterministic architecture
+  -> deterministic named architecture
 
-stochastic single-factory benchmark
-  -> batch success/failure runtime distribution
+stochastic factory
+  -> bursty batch completion
 
 buffer + consumer dynamics
-  -> bounded queue, overflow, starvation, footprint/reliability coupling
+  -> bounded queue and starvation
 
-exact buffer-risk characterization
-  -> finite-state probability of starvation over the nominal execution
+exact finite-state buffer risk
+  -> no Monte Carlo sampling error within the model
+
+initial-buffer prefill policy
+  -> startup latency versus starvation-risk trade-off
 ```
 
-## Milestone 8: exact buffer-risk characterization
+## Milestone 9: initial-buffer prefill policy
 
-The original plan was to run many random seeds. For the current bounded
-single-factory model, that is unnecessary: buffer occupancy has a small finite
-state space and the consumer schedule is exactly periodic.
+Milestone 9 asks a practical architecture question:
 
-Milestone 8 therefore computes the starvation probability directly with a
-finite-state Markov model. This removes Monte Carlo sampling error for the
-current assumptions.
+> Is it better to build a larger buffer, or start computation only after a
+> smaller/larger buffer has been partially prefilled?
 
-### Exact periodic consumer schedule
-
-For d=25:
+The exact finite-state model already accepts an initial occupancy, so this
+milestone sweeps:
 
 ```text
-batch duration = 2,475,000 ns
-consumer demand = 10,000,000 states / 3600 s
-
-exact service pattern over 8 batches:
-6, 7, 7, 7, 7, 7, 7, 7
-sum = 55 states
+0%, 25%, 50%, 75%, 100% initial fill
 ```
 
-For d=27 the exact service schedule has a 40-batch period.
+for 12-, 24-, 48-, and 96-state buffers.
 
-### Why log-space survival matters
+### Prefill itself is batch-quantized
 
-Small buffers make "no starvation for the full run" fantastically unlikely.
-A normal float underflows long before the real probability reaches zero.
+A 116-to-12 factory cannot create fractional protocol batches.
 
-The exact-risk engine therefore retains the survival probability in log space.
+For example, requesting only 3 initial states still requires one successful
+12-state batch. The model retains 3 and explicitly counts 9 discarded states.
 
-For example:
+Expected prefill latency is derived from the same negative-binomial batch model
+as the stochastic factory:
 
 ```text
-24-state buffer:
-log10 P(no starvation) ~= -891.7425
+E[prefill attempts] = required successful batches / 0.89
 ```
 
-So the linear float is 0 by underflow, but the simulator does **not** interpret
-that as mathematical impossibility.
+### Key result: prefill cannot repair every undersized buffer
 
-### Exact one-hour starvation risk
-
-Starting with an empty buffer, under the current independent-batch model:
+For the 48-state buffer:
 
 ```text
-buffer   d    physical qubits   P(any starvation)
-12       25      262,500        ~1.000000
-24       25      278,750        ~1.000000
-48       25      311,250        ~0.9296313
-96       27      438,858        ~0.2397476
+initial fill   P(any starvation)
+0%             ~0.9296313
+25%            ~0.9110559
+50%            ~0.9096579
+75%            ~0.9096314
+100%           ~0.9096308
 ```
 
-This changes the interpretation of the single seed from Milestone 7.
+Even a completely full 48-state buffer still has about 91% probability of at
+least one starvation event. The capacity itself is structurally too small for a
+low-starvation-risk policy under the current assumptions.
 
-The seed-42 trace with a 48-state buffer had only a tiny starvation extension,
-but exact risk analysis shows that **some starvation occurs in about 93% of
-runs** under the same model. The stochastic trace was reproducible; it simply
-was not representative of run-level risk.
+### Key result: prefill is extremely effective once capacity is sufficient
 
-Likewise, the 96-state trace had zero starvation, while the exact model gives
-roughly 24% probability of at least one starvation event when starting empty.
+For the 96-state buffer, which already requires d=27:
 
-That is precisely why statistical characterization was required before moving
-to multi-factory optimization.
+```text
+initial fill   P(any starvation)     expected prefill
+0%             ~2.397476e-1          0 ms
+25%            ~1.062118e-3          6.01 ms
+50%            ~5.302191e-5         12.01 ms
+75%            ~5.114823e-5         18.02 ms
+100%           ~5.114388e-5         24.03 ms
+```
 
-### Primary metric definition
+So under this model, a 25% prefill cuts risk by more than two orders of
+magnitude for only a few milliseconds of expected startup latency. Moving from
+50% to 100% provides almost no additional risk reduction.
 
-`probability_any_starvation` means:
+This is the first clear policy-level trade-off exposed by the digital twin:
+hardware capacity and initialization policy cannot be optimized independently.
 
-> probability that at least one scheduled consumer service slot cannot be
-> filled before the quantized nominal completion time.
+### Reliability accounting guardrail
 
-Unavoidable final-batch time quantization is excluded from this metric. Under
-the fixed-rate consumer model, any starvation event implies positive
-starvation extension.
+The current prefill benchmark conservatively assumes the full modeled machine
+remains protected during prefill. The expected prefill time is therefore added
+as a small failure-budget increment.
+
+This is deliberately conservative. A future layout-aware startup model may
+allow parts of the data block to remain inactive until computation begins.
 
 ### Scientific guardrails
 
-- This is exact **within the stated single-factory Markov model**.
-- Batch successes are still assumed independent with constant p=0.89.
-- Initial buffer occupancy is explicit; the current benchmark starts empty.
-- Buffer-storage layout scaling remains a model assumption.
-- Routing/placement cost of replicated storage remains incomplete.
-- A float underflow in survival probability is accompanied by log10 survival.
-- Exact risk does not validate the physical independence assumption itself.
+- Exact starvation risk is exact only within the finite-state model.
+- Independent batch success with constant p=0.89 remains an assumption.
+- Prefill requests are protocol-batch quantized.
+- Unused states from the final prefill batch are explicitly reported.
+- Prefill latency is stochastic; this milestone reports analytical mean/std.
+- Full-machine-active-during-prefill is a conservative modeling assumption.
+- Buffer-storage scaling and missing replicated-storage routing remain explicit
+  architecture limitations.
 
 ## Quick start
 
@@ -122,10 +121,8 @@ python -m venv .venv
 pip install -e ".[dev]"
 pytest
 
-python -m experiments.litinski_minimal_setup --config configs/litinski_minimal_10mT.yaml
-python -m experiments.stochastic_factory_runtime --config configs/litinski_stochastic_10mT.yaml
-python -m experiments.buffer_sensitivity --config configs/litinski_buffer_10mT.yaml
 python -m experiments.buffer_risk_characterization --config configs/litinski_buffer_risk_10mT.yaml
+python -m experiments.prefill_policy_sensitivity --config configs/litinski_prefill_policy_10mT.yaml
 ```
 
 ## Milestones
@@ -134,7 +131,7 @@ python -m experiments.buffer_risk_characterization --config configs/litinski_buf
 - [x] Protocol-consistent deterministic benchmark
 - [x] Stochastic/burst-aware single-factory production
 - [x] Explicit magic-state buffer and consumer/starvation dynamics
-- [ ] Exact finite-state buffer-risk characterization
-- [ ] Initial-buffer / prefill policy study
+- [x] Exact finite-state buffer-risk characterization
+- [ ] Initial-buffer prefill policy study
 - [ ] Multi-factory space-time trade-off search
 - [ ] Static Pareto search
