@@ -706,6 +706,56 @@ These metrics describe the interconnect state itself. They are deliberately not
 presented as replacements for the exact whole-computation starvation metrics
 from Milestone 14.
 
+### First persistent-state result: carryover has a timing threshold
+
+The 2-factory / 48-state staggered layout remains event-local across the full
+tested sensitivity range:
+
+```text
+hop latency       max batch latency    carryover boundaries
+1 step            12 steps             0 / 2000
+2 steps           24 steps             0 / 2000
+4 steps           48 steps             0 / 2000
+```
+
+Its staggered event spacing is 49.5 logical steps, so even the 48-step slow
+batch drains before the next factory completion event.
+
+The 3-factory / 48-state layout crosses that boundary at 4-step hops:
+
+```text
+hop latency       carryover boundaries   max carryover   drain tail
+1 step            0 / 2000               0               0
+2 steps           0 / 2000               0               0
+4 steps           1999 / 2000            1               15 steps
+```
+
+The 4-factory / 96-state layout exposes an additional geometry effect because
+factory 4 has a 9-cell route while factories 1-3 have one-cell routes:
+
+```text
+hop latency       carryover boundaries   max carryover   drain tail
+1 step            0 / 2000               0               0
+2 steps           499 / 2000             1               15.25 steps
+4 steps           1999 / 2000            2               55.25 steps
+```
+
+At the 4-step setting, the busiest route cell is reserved only about 48.5% of
+the generation horizon, yet batches still persist across almost every event
+boundary.
+
+That distinction matters:
+
+```text
+low average link utilization
+does not imply
+zero in-flight backlog at factory-event boundaries
+```
+
+Route length, event cadence, and batch completion semantics can create
+persistent network state before the interconnect is globally bandwidth
+saturated.
+
 ### Scope boundary
 
 Milestone 15 proves that transport state can persist across multiple factory
@@ -790,6 +840,6 @@ python -m experiments.inflight_network_stress \
 - [x] Routed/unrouted Pareto stability comparison
 - [x] Greedy 2D packing / A* pathfinding floorplanner
 - [x] Finite-capacity interconnect + transport latency
-- [ ] Persistent in-flight network-state / multi-event transport queue
+- [x] Persistent in-flight network-state / multi-event transport queue
 - [ ] Global placement optimization
 - [ ] Adaptive / dynamic factory provisioning
