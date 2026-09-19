@@ -25,87 +25,89 @@ protocol-specific models.
 
 ## Protocol-consistent Litinski benchmark
 
-Milestone 5 adds a separate named benchmark instead of mutating the historical
-baseline:
+The named deterministic benchmark is:
 
 ```text
 configs/litinski_minimal_10mT.yaml
 ```
 
-The benchmark adapts the minimal p=1e-3 setup from Daniel Litinski,
-*A Game of Surface Codes* (Quantum 3, 128, 2019) to the repository's
-10,000,000-T-state workload.
-
-Named layout and protocol inputs:
-
-```text
-compact data block       153 tiles
-116-to-12 distillation    44 tiles
-output storage            13 tiles
-total                    210 tiles
-
-batch outputs              12 states
-batch duration             99 logical time steps
-batch success              0.89
-code-cycle benchmark        1 microsecond
-```
-
-The protocol-derived expected production interval is
-
-```text
-99 / (12 * 0.89) ~= 9.26966 logical time steps / usable state
-```
-
-and one logical time step is modeled as `d` code cycles.
-
-### Whole-computation reliability
-
-This benchmark does not select distance from the old per-cycle target alone.
-It applies the tile/time reliability budget used by the named architecture:
-
-```text
-N_tiles * N_time_steps * d * p_L(p,d) <= 0.01
-```
-
-For T_count=10,000,000 and p=1e-3:
-
-```text
-d = 23 -> estimated logical-failure budget ~= 0.04477  (fails)
-d = 25 -> estimated logical-failure budget ~= 0.00487  (passes)
-```
-
-Therefore the protocol-consistent benchmark selects `d=25`.
-
-### First protocol-consistent result
-
-At `d=25` with a 1 microsecond code cycle:
+For the 10,000,000-T-state workload it selects `d=25` and yields:
 
 ```text
 factory throughput       ~= 4,315.15 usable states/s
 factories                = 1
-runtime                  ~= 2,317.42 s  (38.62 min)
+runtime                  ~= 2,317.42 s
 physical qubits          = 262,500
 STV                      ~= 6.08321629e8 physical-qubit*s
 failure-budget estimate  ~= 0.0048666
 ```
 
-Unlike the historical mixed-model fixture, geometry, batch timing, batch
-success probability, code-distance selection, runtime, and footprint now come
-from one named architecture model plus one explicit hardware timing assumption.
+## Milestone 6: stochastic batch production
 
-The 1 microsecond code-cycle value is a benchmark assumption used in Litinski's
-worked example, not a universal hardware constant.
+The deterministic benchmark uses expected batch success. Milestone 6 adds an
+explicit stochastic layer without changing that benchmark:
+
+```text
+configs/litinski_stochastic_10mT.yaml
+```
+
+The 116-to-12 factory is treated as an all-or-nothing batch process:
+
+```text
+successful batch -> 12 usable states
+failed batch     -> 0 usable states
+P(success)       = 0.89
+batch duration   = 99 * d * code_cycle
+```
+
+At `d=25` and a 1 microsecond code cycle:
+
+```text
+batch duration = 0.002475 s
+successful batches required for 10M states = 833,334
+```
+
+The number of failures before those successful batches follows a negative
+binomial distribution. This gives exact analytical runtime moments and a
+vectorized Monte Carlo completion-time distribution.
+
+For the configured 10,000-run seeded experiment:
+
+```text
+analytical mean runtime ~= 2317.4176 s
+analytical runtime std  ~= 0.8420 s
+
+Monte Carlo mean        ~= analytical mean
+Monte Carlo p50/p95/p99 = reported by experiment
+deadline                = 3600 s
+observed deadline misses = reported, never interpreted as a true zero probability
+```
+
+When zero deadline misses are observed, the experiment also reports the
+rule-of-three 95% upper heuristic (`3 / N`) so that "0 observed" is not
+misstated as "impossible."
+
+### Burst-aware event stream
+
+`simulator.stochastic_factory.iter_batch_events()` exposes the underlying
+batch process as discrete events. Every batch produces either 0 or 12 states.
+This is the foundation for the next buffer/consumer model where queue depth,
+starvation time, and burst absorption can be simulated explicitly.
+
+### Current scope guardrail
+
+Milestone 6 intentionally supports **one factory only** for the exact
+completion-time Monte Carlo. Multi-factory synchronization and shared-buffer
+behavior are not approximated away; they are deferred to a dedicated model.
 
 ## Scientific guardrails
 
-- The historical baseline remains immutable for regression.
-- Protocol-derived throughput does not use the legacy scalar routing penalty.
-- Routing/workspace are not separately added for the named minimal layout;
-  their required geometry is treated as embedded in the cited tile layout.
-- Expected batch success is used as an average-rate model; stochastic burst
-  simulation is a later milestone.
-- The whole-computation failure expression is a resource-estimation budget
-  model, not an exact stochastic failure probability.
+- Historical regression fixtures remain immutable.
+- Deterministic protocol benchmark remains separately reproducible.
+- Stochastic runs use explicit seeds and configured run counts.
+- "0 observed misses" is not reported as zero true probability.
+- Final-batch quantization is kept explicit rather than hidden by a continuous-rate formula.
+- Multi-factory behavior is not inferred from the one-factory distribution.
 
 ## Quick start
 
@@ -119,6 +121,7 @@ pytest
 python -m experiments.static_resources --config configs/baseline.yaml
 python -m experiments.whole_machine_accounting --config configs/baseline.yaml
 python -m experiments.litinski_minimal_setup --config configs/litinski_minimal_10mT.yaml
+python -m experiments.stochastic_factory_runtime --config configs/litinski_stochastic_10mT.yaml
 ```
 
 ## Milestones
@@ -128,7 +131,8 @@ python -m experiments.litinski_minimal_setup --config configs/litinski_minimal_1
 - [x] Legacy factory regression fixture
 - [x] Lower-bound resource metrics
 - [x] Provenance-aware partial whole-machine accounting
-- [ ] Protocol-consistent factory timing, reliability, footprint, and STV
-- [ ] Stochastic/burst-aware magic-state production
+- [x] Protocol-consistent factory timing, reliability, footprint, and STV
+- [ ] Stochastic/burst-aware single-factory production
+- [ ] Explicit magic-state buffer and consumer/starvation dynamics
 - [ ] Multi-factory space-time trade-off search
 - [ ] Static Pareto search
