@@ -82,8 +82,8 @@ def test_persistent_network_summary_detects_cross_event_inflight_state():
         generation_horizon_end_tick=12,
     )
 
-    assert summary.max_inflight_batches_at_event_boundary >= 1
-    assert summary.event_boundaries_with_inflight >= 1
+    assert summary.max_carryover_batches_at_event_boundary >= 1
+    assert summary.event_boundaries_with_carryover >= 1
     assert summary.max_batch_latency_ticks > 4
 
 
@@ -105,8 +105,8 @@ def test_real_floorplan_stress_shows_latency_sensitivity(
             "mean_batch_latency_logical_steps"
         ]
         assert slow[
-            "fraction_event_boundaries_with_inflight"
-        ] >= fast["fraction_event_boundaries_with_inflight"]
+            "fraction_event_boundaries_with_carryover"
+        ] >= fast["fraction_event_boundaries_with_carryover"]
         assert slow[
             "max_contention_wait_logical_steps_per_state"
         ] >= fast[
