@@ -10,9 +10,15 @@ hardware:
   platform: superconducting_transmon
 
   errors:
+    p_1q:
+      value: 1.0e-4
+      source: benchmark_assumption
     p_2q:
       value: 1.0e-3
       source: protocol_reference_regime
+    p_measurement:
+      value: 1.0e-3
+      source: benchmark_assumption
 
   timing_ns:
     code_cycle:
@@ -20,6 +26,8 @@ hardware:
       source: literature_benchmark_assumption
 
 qec:
+  target_logical_error: 1.0e-12
+
   physical_error_threshold:
     value: 1.0e-2
     source: model_assumption
