@@ -47,28 +47,27 @@ probability is mathematically nonzero. Pareto filtering therefore operates on
 the underflow-safe log-space quantity while still reporting ordinary
 probabilities for interpretation and plots.
 
-### Batch quantization creates free policy improvements
+### Batch quantization and overflow make the frontier non-monotonic
 
-The automatic search exposes a subtle effect that is easy to miss manually.
+The automatic search exposed a more interesting effect than the initial
+hand-written expectation.
 
-For a 12-state buffer, 25%, 50%, 75%, and 100% prefill all require exactly one
-successful 12-state factory batch. Therefore 100% prefill has the same expected
-startup latency and the same physical hardware as the smaller nonzero fills,
-but lower starvation risk.
+A 12-state buffer uses one successful factory batch for every non-zero prefill
+request from 25% through 100%. It is tempting to assume that the fullest policy
+must therefore dominate all smaller fills.
 
-Those 25/50/75% policies are strictly dominated.
+The exact search rejects that shortcut.
 
-The same effect occurs for the 24-state buffer:
+`B012_F025` is genuinely dominated by `B012_F100`, but `B012_F050`
+remains Pareto-optimal in the current bounded-buffer model.
 
-```text
-25% and 50% -> one successful prefill batch
-75% and 100% -> two successful prefill batches
-```
+The reason is architectural: increasing initial occupancy can also increase
+early overflow and change the subsequent buffer-state distribution. Equal
+prefill batch count and equal hardware therefore do **not** guarantee monotonic
+starvation risk.
 
-so 50% dominates 25%, and 100% dominates 75%.
-
-This is exactly the kind of discrete protocol effect that continuous
-optimization would miss.
+This is precisely why the optimizer computes dominance from the full dynamic
+model instead of encoding a rule such as "more prefill is always better."
 
 ### Constraint-driven reference policies
 
