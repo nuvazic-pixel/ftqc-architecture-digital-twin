@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import json
 
 import pytest
 
@@ -127,10 +126,43 @@ def test_stress_outputs_are_machine_readable(
         assert output.stat().st_size > 0
 
 
-def test_discover_persistent_network_stress_profile(
+def test_persistent_network_stress_profile_is_locked(
     stress_result: dict[str, object],
 ):
-    # Temporary discovery assertion; replace with locked regression values.
-    raise AssertionError(
-        json.dumps(stress_result["results"], indent=2, sort_keys=True)
-    )
+    rows = {
+        (row["scenario"], row["hop_latency_logical_steps"]): row
+        for row in stress_result["results"]
+    }
+
+    # Two factories remain event-local even at the slowest tested hop latency:
+    # 48 logical steps < the 49.5-step staggered event interval.
+    n2_slow = rows[("N2_B048_STAG", 4)]
+    assert n2_slow["max_carryover_batches_at_event_boundary"] == 0
+    assert n2_slow["fraction_event_boundaries_with_carryover"] == 0.0
+    assert n2_slow["drain_tail_logical_steps"] == 0.0
+
+    # Three factories cross the persistence threshold at 4-step hops.
+    n3_slow = rows[("N3_B048_STAG", 4)]
+    assert n3_slow["event_boundaries_with_carryover"] == 1999
+    assert n3_slow["fraction_event_boundaries_with_carryover"] == 0.9995
+    assert n3_slow["max_carryover_batches_at_event_boundary"] == 1
+    assert n3_slow["drain_tail_logical_steps"] == 15.0
+
+    # Four factories expose route-length heterogeneity: factory 4 has the long
+    # 9-cell path, so carryover appears already at 2-step hop latency.
+    n4_mid = rows[("N4_B096_STAG", 2)]
+    assert n4_mid["route_lengths_cells"]["4"] == 9
+    assert n4_mid["event_boundaries_with_carryover"] == 499
+    assert n4_mid["fraction_event_boundaries_with_carryover"] == 0.2495
+    assert n4_mid["max_carryover_batches_at_event_boundary"] == 1
+    assert n4_mid["drain_tail_logical_steps"] == 15.25
+
+    n4_slow = rows[("N4_B096_STAG", 4)]
+    assert n4_slow["event_boundaries_with_carryover"] == 1999
+    assert n4_slow["fraction_event_boundaries_with_carryover"] == 0.9995
+    assert n4_slow["max_carryover_batches_at_event_boundary"] == 2
+    assert n4_slow["max_batch_latency_logical_steps"] == 80.0
+    assert n4_slow["drain_tail_logical_steps"] == 55.25
+    assert n4_slow[
+        "busiest_cell_utilization_during_generation_horizon"
+    ] == pytest.approx(0.48484848484848486)
