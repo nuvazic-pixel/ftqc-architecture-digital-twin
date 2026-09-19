@@ -187,6 +187,33 @@ def run(config_path: str) -> dict[str, object]:
                             ),
                         )
 
+                        # Transport delay/stalls can only increase campaign
+                        # duration. If this cheaper lower-bound campaign already
+                        # fails reliability, there is no reason to build the
+                        # expensive exact transport kernel at this distance.
+                        lower_bound_failure = logical_failure_budget_from_runtime(
+                            tile_count=total_tiles,
+                            runtime_seconds=(
+                                nominal_runtime_seconds
+                                + startup.conservative_startup_seconds
+                            ),
+                            code_cycle_time_seconds=code_cycle_seconds,
+                            distance=distance,
+                            physical_error=config["hardware"]["errors"][
+                                "p_2q"
+                            ]["value"],
+                            physical_error_threshold=qec[
+                                "physical_error_threshold"
+                            ]["value"],
+                            fit_A=qec["fit_A"]["value"],
+                        )
+                        if lower_bound_failure > max_failure:
+                            last_reason = (
+                                "lower-bound campaign already exceeds logical "
+                                "failure budget before transport dynamics."
+                            )
+                            continue
+
                         try:
                             transport = analyze_transport_aware_starvation(
                                 floorplan=floorplan,
