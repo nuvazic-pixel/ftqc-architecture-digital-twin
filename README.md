@@ -623,6 +623,101 @@ is included.
 This is the first result in the project where an explicit temporal interconnect
 model removes a previously feasible risk-target reference design.
 
+## Milestone 15: persistent in-flight network state
+
+Milestone 14 still had one deliberate simplification: every transported batch
+had to finish before the next factory event. Milestone 15 removes that shortcut
+at the network-scheduler layer.
+
+### Absolute-time reservations survive event boundaries
+
+The new `PersistentReservationNetwork` stores route-cell occupancy in absolute
+network ticks. When a later factory event creates another batch, the new states
+see every future cell-time reservation already created by older batches.
+
+That means the simulator can now represent:
+
+```text
+batch A generated
+  -> still moving through the interconnect
+
+next factory event
+  -> batch B generated
+
+batch B
+  -> sees batch A's future reservations
+  -> waits or pipelines around them
+```
+
+Nothing is reset merely because a new factory event occurs.
+
+### Mid-route waiting
+
+Each magic state is scheduled hop by hop over the A* path.
+
+If the next route cell is already occupied for the configured hop duration, the
+state waits before entering that cell. The wait is recorded as contention delay.
+
+Simultaneous batches are still scheduled round-robin by token index and factory
+ID, so one whole 12-state batch does not receive hidden priority.
+
+### Deterministic worst-case network stress
+
+The first persistent-state benchmark intentionally uses:
+
+```text
+every scheduled factory batch succeeds
+```
+
+This is an all-success structural load test, not a stochastic probability
+estimate. It asks whether the network can carry the maximum production pattern
+without persistent backlog.
+
+The configured scenarios are:
+
+```text
+2 factories / 48-state buffer / even staggered
+3 factories / 48-state buffer / even staggered
+4 factories / 96-state buffer / even staggered
+```
+
+with hop-latency sensitivity of 1, 2, and 4 logical time steps.
+
+Even-staggered timing uses integer substeps of
+`1 / factory_count` logical time steps, so the 99-step protocol period remains
+exact without floating-point phase clocks.
+
+### Persistent-network metrics
+
+The stress experiment reports:
+
+```text
+maximum in-flight batches at factory-event boundaries
+fraction of factory-event boundaries with in-flight transport
+in-flight batches after the last generation event
+network drain tail
+mean / p95 / max batch latency
+mean / max contention wait per state
+busiest route-cell utilization
+total reserved cell-time
+```
+
+These metrics describe the interconnect state itself. They are deliberately not
+presented as replacements for the exact whole-computation starvation metrics
+from Milestone 14.
+
+### Scope boundary
+
+Milestone 15 proves that transport state can persist across multiple factory
+events.
+
+It does not yet embed the full reservation/backlog state inside the exact
+whole-run Markov starvation kernel. That coupling is a separate problem because
+the state space is now much larger than buffer occupancy alone.
+
+Waiting nodes also have unbounded temporary storage in this milestone. Finite
+node-buffer capacity and backpressure remain future refinements.
+
 ## Scientific guardrails
 
 - Batch successes remain independent with constant p=0.89.
@@ -634,6 +729,10 @@ model removes a previously feasible risk-target reference design.
 - The event-order convention is explicit and can be sensitivity-tested later.
 - The frontier is exact only for the configured discrete design grid.
 - Nominal campaign STV does not include stochastic post-starvation runtime extension.
+- Persistent network reservations are exact for the configured deterministic
+  scheduler, but waiting nodes currently have unbounded temporary storage.
+- The all-success persistent-network benchmark is a structural worst-case load
+  test, not a run-level probability estimate.
 
 ## Quick start
 
@@ -671,6 +770,10 @@ python -m experiments.floorplan_model_comparison
 python -m experiments.transport_aware_pareto_search \
   --config configs/litinski_multi_factory_transport_pareto_10mT.yaml \
   --output-dir results/transport_aware_pareto
+
+python -m experiments.inflight_network_stress \
+  --config configs/litinski_inflight_network_stress.yaml \
+  --output-dir results/inflight_network_stress
 ```
 
 ## Milestones
@@ -687,6 +790,6 @@ python -m experiments.transport_aware_pareto_search \
 - [x] Routed/unrouted Pareto stability comparison
 - [x] Greedy 2D packing / A* pathfinding floorplanner
 - [x] Finite-capacity interconnect + transport latency
-- [ ] In-flight network-state / multi-event transport queue
+- [ ] Persistent in-flight network-state / multi-event transport queue
 - [ ] Global placement optimization
 - [ ] Adaptive / dynamic factory provisioning
