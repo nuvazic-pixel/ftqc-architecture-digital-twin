@@ -92,6 +92,9 @@ def pareto_partition(
       - is_pareto
       - dominated_by: candidate IDs that dominate the row
     """
+    if not objectives:
+        raise ParetoError("at least one objective is required.")
+
     rows = [dict(candidate) for candidate in candidates]
     if not rows:
         raise ParetoError("at least one candidate is required.")
