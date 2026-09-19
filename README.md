@@ -2,112 +2,119 @@
 
 A reproducible simulator for fault-tolerant quantum-computing (FTQC) architecture co-design.
 
-## Historical regression baseline
+## Stable layers
 
-The original regression fixture remains frozen and reproducible:
-
-```text
-p_2q = 1e-3
-p_th = 1e-2
-A = 0.1
-p_L,target = 1e-12
-=> d = 21
-
-legacy r_T(21) = 60.47 states/s/factory
-legacy zeta = 3
-T_count = 10,000,000
-T_wall,target = 3600 s
-=> legacy N_fac,min = 138
-```
-
-These values remain regression fixtures and are not silently rewritten by later
-protocol-specific models.
-
-## Protocol-consistent Litinski benchmark
-
-The named deterministic benchmark is:
+The repository now keeps three distinct model layers instead of overwriting old
+results:
 
 ```text
-configs/litinski_minimal_10mT.yaml
+historical baseline
+  -> regression stability
+
+named Litinski benchmark
+  -> protocol-consistent deterministic resource model
+
+stochastic factory benchmark
+  -> batch success/failure and runtime distributions
 ```
 
-For the 10,000,000-T-state workload it selects `d=25` and yields:
+## Milestone 7: explicit buffer + consumer dynamics
+
+Milestone 7 adds the first coupled producer / bounded-buffer / consumer model:
 
 ```text
-factory throughput       ~= 4,315.15 usable states/s
-factories                = 1
-runtime                  ~= 2,317.42 s
-physical qubits          = 262,500
-STV                      ~= 6.08321629e8 physical-qubit*s
-failure-budget estimate  ~= 0.0048666
+factory batch
+   |
+   v
+bounded magic-state buffer
+   |
+   v
+fixed-rate algorithm consumer
 ```
 
-## Milestone 6: stochastic batch production
-
-The deterministic benchmark uses expected batch success. Milestone 6 adds an
-explicit stochastic layer without changing that benchmark:
+The consumer rate is derived from the workload target rather than a free magic
+number:
 
 ```text
-configs/litinski_stochastic_10mT.yaml
+10,000,000 states / 3600 s
 ```
 
-The 116-to-12 factory is treated as an all-or-nothing batch process:
+A consumer service opportunity that is missed because the buffer is empty is
+not carried forward. This means starvation creates real wall-clock extension;
+the consumer cannot recover with unbounded catch-up later.
+
+### Numerically exact service schedule
+
+The fixed-rate schedule is implemented with integer nanoseconds and an integer
+accumulator. This avoids a subtle source of floating-point drift where a nominal
+6/7-state-per-batch pattern can change solely because 0.002475 s is not exactly
+representable in binary floating point.
+
+### Buffer-storage sensitivity model
+
+The cited minimal layout has 13 storage tiles for the 12-state factory output.
+For sensitivity only, larger buffers linearly replicate that storage block:
 
 ```text
-successful batch -> 12 usable states
-failed batch     -> 0 usable states
-P(success)       = 0.89
-batch duration   = 99 * d * code_cycle
+12 states -> 13 storage tiles
+24 states -> 26 storage tiles
+48 states -> 52 storage tiles
+96 states -> 104 storage tiles
 ```
 
-At `d=25` and a 1 microsecond code cycle:
+This scaling is explicitly labeled `model_assumption`. Extra placement and
+routing cost for replicated buffers is not yet modeled, so the footprint is a
+sensitivity-model lower bound rather than a final physical layout.
+
+### Coupled reliability effect
+
+A larger buffer is not automatically better. More storage tiles increase the
+number of simultaneously protected logical patches, which can tighten the
+whole-machine reliability budget.
+
+For the configured 1-hour design budget:
 
 ```text
-batch duration = 0.002475 s
-successful batches required for 10M states = 833,334
+capacity 12 -> d=25
+capacity 24 -> d=25
+capacity 48 -> d=25
+capacity 96 -> d=27
 ```
 
-The number of failures before those successful batches follows a negative
-binomial distribution. This gives exact analytical runtime moments and a
-vectorized Monte Carlo completion-time distribution.
+That d=25 to d=27 jump is exactly the kind of cross-layer architectural effect
+the digital twin is intended to expose.
 
-For the configured 10,000-run seeded experiment:
+### Seeded sensitivity trace
+
+With seed 42 and the current discard-on-overflow policy:
 
 ```text
-analytical mean runtime ~= 2317.4176 s
-analytical runtime std  ~= 0.8420 s
-
-Monte Carlo mean        ~= analytical mean
-Monte Carlo p50/p95/p99 = reported by experiment
-deadline                = 3600 s
-observed deadline misses = reported, never interpreted as a true zero probability
+buffer   d    physical qubits   starvation extension
+12       25      262,500        ~138.28 s
+24       25      278,750        ~3.71 s
+48       25      311,250        ~0.002475 s
+96       27      438,858         0 s
 ```
 
-When zero deadline misses are observed, the experiment also reports the
-rule-of-three 95% upper heuristic (`3 / N`) so that "0 observed" is not
-misstated as "impossible."
+These four values are one reproducible stochastic trace, not probability
+estimates. A later milestone will run multi-seed / rare-event analysis.
 
-### Burst-aware event stream
-
-`simulator.stochastic_factory.iter_batch_events()` exposes the underlying
-batch process as discrete events. Every batch produces either 0 or 12 states.
-This is the foundation for the next buffer/consumer model where queue depth,
-starvation time, and burst absorption can be simulated explicitly.
-
-### Current scope guardrail
-
-Milestone 6 intentionally supports **one factory only** for the exact
-completion-time Monte Carlo. Multi-factory synchronization and shared-buffer
-behavior are not approximated away; they are deferred to a dedicated model.
+The experiment also rechecks the logical-failure budget using the actual
+post-stall completion time. Distance is selected from the design-time runtime
+budget, never from a favorable random trajectory.
 
 ## Scientific guardrails
 
 - Historical regression fixtures remain immutable.
-- Deterministic protocol benchmark remains separately reproducible.
-- Stochastic runs use explicit seeds and configured run counts.
-- "0 observed misses" is not reported as zero true probability.
-- Final-batch quantization is kept explicit rather than hidden by a continuous-rate formula.
-- Multi-factory behavior is not inferred from the one-factory distribution.
+- Protocol-consistent deterministic results remain separately reproducible.
+- Stochastic seeds are explicit.
+- Buffer overflow is currently `discard`, not silently backpressured.
+- Buffer storage scaling is an explicit sensitivity assumption.
+- Missing storage-placement/routing cost is not presented as modeled.
+- Raw 3600-second deadline slip is separated from unavoidable batch-time
+  quantization.
+- Code distance is selected from a design budget and revalidated after the
+  stochastic trace.
 
 ## Quick start
 
@@ -122,6 +129,7 @@ python -m experiments.static_resources --config configs/baseline.yaml
 python -m experiments.whole_machine_accounting --config configs/baseline.yaml
 python -m experiments.litinski_minimal_setup --config configs/litinski_minimal_10mT.yaml
 python -m experiments.stochastic_factory_runtime --config configs/litinski_stochastic_10mT.yaml
+python -m experiments.buffer_sensitivity --config configs/litinski_buffer_10mT.yaml
 ```
 
 ## Milestones
@@ -132,7 +140,8 @@ python -m experiments.stochastic_factory_runtime --config configs/litinski_stoch
 - [x] Lower-bound resource metrics
 - [x] Provenance-aware partial whole-machine accounting
 - [x] Protocol-consistent factory timing, reliability, footprint, and STV
-- [ ] Stochastic/burst-aware single-factory production
+- [x] Stochastic/burst-aware single-factory production
 - [ ] Explicit magic-state buffer and consumer/starvation dynamics
+- [ ] Multi-seed buffer-risk characterization
 - [ ] Multi-factory space-time trade-off search
 - [ ] Static Pareto search
