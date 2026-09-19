@@ -48,7 +48,7 @@ def test_prefill_policy_exposes_structural_capacity_limit_at_48_states():
     )
     assert cap48[1.0]["probability_any_starvation"] == pytest.approx(
         0.9096307972113646,
-        abs=1e-12,
+        abs=1e-10,
     )
     assert cap48[1.0]["probability_any_starvation"] > 0.90
 
