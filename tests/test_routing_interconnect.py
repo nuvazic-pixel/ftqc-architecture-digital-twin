@@ -132,7 +132,30 @@ def test_routing_comparison_rechecks_reference_policy_stability(
     assert comparison_result["routing_model"] == "manhattan_trunk_and_spur_v1"
 
     references = comparison_result["reference_policy_stability"]
-    assert references == {}, references
+
+    expected_routed = {
+        "0.01": "N1_B096_SYNC_I024",
+        "0.0001": "N1_B096_SYNC_I048",
+        "1e-06": "N2_B096_SYNC_I048",
+        "1e-09": "N2_B096_SYNC_I048",
+        "1e-12": "N2_B096_STAG_I048",
+        "1e-18": "N3_B096_STAG_I048",
+        "1e-24": "N4_B096_STAG_I048",
+    }
+
+    assert {
+        target: item["routed_candidate_id"]
+        for target, item in references.items()
+    } == expected_routed
+
+    assert comparison_result["all_reference_policies_unchanged"] is False
+
+    changed_targets = {
+        target
+        for target, item in references.items()
+        if not item["unchanged"]
+    }
+    assert changed_targets == {"0.01", "0.0001", "1e-06", "1e-09"}
 
 
 def test_routing_comparison_writes_machine_readable_outputs(
