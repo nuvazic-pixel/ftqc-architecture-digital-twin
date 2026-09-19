@@ -1,0 +1,109 @@
+experiment:
+  name: litinski_exact_buffer_risk_10mT
+  version: "0.1"
+
+workload:
+  logical_qubits: 100
+  t_count: 10000000
+
+hardware:
+  platform: superconducting_transmon
+
+  errors:
+    p_1q:
+      value: 1.0e-4
+      source: benchmark_assumption
+    p_2q:
+      value: 1.0e-3
+      source: protocol_reference_regime
+    p_measurement:
+      value: 1.0e-3
+      source: benchmark_assumption
+
+  timing_ns:
+    code_cycle:
+      value: 1000
+      source: literature_benchmark_assumption
+
+qec:
+  target_logical_error: 1.0e-12
+
+  physical_error_threshold:
+    value: 1.0e-2
+    source: model_assumption
+
+  fit_A:
+    value: 0.1
+    source: literature_model
+
+  system_failure_budget:
+    max_total_failure_probability: 0.01
+
+  allowed_distances:
+    - 13
+    - 15
+    - 17
+    - 19
+    - 21
+    - 23
+    - 25
+    - 27
+    - 29
+    - 31
+
+factories:
+  count: 1
+
+  protocol:
+    name: litinski_116_to_12_compact
+    distillation_tiles: 44
+    output_states_per_batch: 12
+    protocol_steps_per_batch: 99
+    batch_success_probability: 0.89
+
+resource_model:
+  scope: exact_single_factory_buffer_risk
+
+  tile_model:
+    physical_qubits_per_d2:
+      value: 2.0
+      source: literature_model
+
+  data_block:
+    tiles:
+      value: 153
+      source: literature
+
+  buffer_storage:
+    base_capacity_states: 12
+    base_storage_tiles: 13
+    scaling_model: linear_block_replication
+    source: model_assumption
+
+buffer_risk:
+  model: exact_periodic_finite_state_markov
+  initial_buffer_states: 0
+
+  consumer:
+    nominal_runtime_seconds: 3600
+
+  sensitivity:
+    capacities_states:
+      - 12
+      - 24
+      - 48
+      - 96
+
+  primary_metric:
+    name: probability_any_starvation_by_quantized_nominal_completion
+    note: >
+      This excludes unavoidable final-batch time quantization. Any starvation
+      event implies positive starvation extension under the fixed-rate consumer.
+
+optimizer:
+  method: sensitivity_sweep
+  objective: starvation_risk_vs_physical_qubits
+
+outputs:
+  save_runs_csv: true
+  save_config_snapshot: true
