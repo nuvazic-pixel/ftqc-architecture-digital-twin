@@ -1,0 +1,140 @@
+experiment:
+  name: litinski_policy_pareto_10mT
+  version: "0.1"
+
+workload:
+  logical_qubits: 100
+  t_count: 10000000
+
+hardware:
+  platform: superconducting_transmon
+
+  errors:
+    p_1q:
+      value: 1.0e-4
+      source: benchmark_assumption
+    p_2q:
+      value: 1.0e-3
+      source: protocol_reference_regime
+    p_measurement:
+      value: 1.0e-3
+      source: benchmark_assumption
+
+  timing_ns:
+    gate_1q: 25
+    gate_2q: 100
+    measurement: 500
+    code_cycle:
+      value: 1000
+      source: literature_benchmark_assumption
+
+qec:
+  target_logical_error: 1.0e-12
+
+  physical_error_threshold:
+    value: 1.0e-2
+    source: model_assumption
+
+  fit_A:
+    value: 0.1
+    source: literature_model
+
+  system_failure_budget:
+    max_total_failure_probability: 0.01
+
+  allowed_distances:
+    - 13
+    - 15
+    - 17
+    - 19
+    - 21
+    - 23
+    - 25
+    - 27
+    - 29
+    - 31
+
+factories:
+  count: 1
+
+  protocol:
+    name: litinski_116_to_12_compact
+    distillation_tiles: 44
+    output_states_per_batch: 12
+    protocol_steps_per_batch: 99
+    batch_success_probability: 0.89
+
+resource_model:
+  scope: exact_prefill_policy_pareto
+
+  tile_model:
+    physical_qubits_per_d2:
+      value: 2.0
+      source: literature_model
+
+  data_block:
+    tiles:
+      value: 153
+      source: literature
+
+  buffer_storage:
+    base_capacity_states: 12
+    base_storage_tiles: 13
+    scaling_model: linear_block_replication
+    source: model_assumption
+
+prefill_policy:
+  model: exact_initial_state_plus_negative_binomial_prefill_cost
+  initial_state_semantics: retained_usable_magic_states
+  prefill_failure_budget_model: full_machine_active_conservative
+
+  consumer:
+    nominal_runtime_seconds: 3600
+
+  sensitivity:
+    capacities_states:
+      - 12
+      - 24
+      - 48
+      - 96
+    fill_fractions:
+      - 0.0
+      - 0.25
+      - 0.5
+      - 0.75
+      - 1.0
+
+policy_search:
+  method: exact_discrete_pareto_filter
+
+  feasibility:
+    max_conservative_expected_campaign_failure_budget: 0.01
+
+  objectives:
+    - metric: physical_qubits
+      direction: min
+    - metric: expected_prefill_seconds
+      direction: min
+    - metric: log10_probability_no_starvation
+      direction: max
+
+  note: >
+    log10 P(no starvation) is used for Pareto dominance instead of the linear
+    starvation probability so extreme near-certain-starvation policies remain
+    distinguishable even when linear probabilities round to 1.0.
+
+  risk_target_views:
+    - 0.1
+    - 0.01
+    - 0.001
+    - 0.0001
+    - 0.00001
+
+  reference_selection:
+    rule: minimum_physical_qubits_then_prefill_latency_then_starvation_risk
+
+outputs:
+  save_runs_csv: true
+  save_pareto_csv: true
+  save_config_snapshot: true
+  save_figures: true
