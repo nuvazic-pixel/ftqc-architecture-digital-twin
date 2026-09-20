@@ -190,6 +190,7 @@ def _weighted_astar_route(
     # A low sharing target explicitly discourages reuse; a high target makes
     # already-routed factory corridor cells cheap. New cells always cost 1.
     existing_cost = 3.0 - 2.75 * sharing_target
+    heuristic_step_cost = min(1.0, existing_cost)
 
     target_tuple = tuple(sorted(targets))
     min_x, min_y, max_x, max_y = bounds
@@ -207,7 +208,10 @@ def _weighted_astar_route(
         heapq.heappush(
             queue,
             (
-                float(_manhattan_to_targets(source, target_tuple)),
+                float(
+                    _manhattan_to_targets(source, target_tuple)
+                    * heuristic_step_cost
+                ),
                 0.0,
                 source[1],
                 source[0],
@@ -253,9 +257,12 @@ def _weighted_astar_route(
 
             distance[neighbor] = new_cost
             came_from[neighbor] = current
-            heuristic = _manhattan_to_targets(
-                neighbor,
-                target_tuple,
+            heuristic = (
+                _manhattan_to_targets(
+                    neighbor,
+                    target_tuple,
+                )
+                * heuristic_step_cost
             )
             heapq.heappush(
                 queue,
