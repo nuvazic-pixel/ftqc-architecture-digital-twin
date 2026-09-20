@@ -6,6 +6,43 @@ workload:
   logical_qubits: 100
   t_count: 10000000
 
+hardware:
+  platform: superconducting_transmon
+
+  errors:
+    p_1q:
+      value: 1.0e-4
+      source: benchmark_assumption
+    p_2q:
+      value: 1.0e-3
+      source: protocol_reference_regime
+    p_measurement:
+      value: 1.0e-3
+      source: benchmark_assumption
+
+qec:
+  target_logical_error: 1.0e-12
+
+  physical_error_threshold:
+    value: 1.0e-2
+    source: model_assumption
+
+  fit_A:
+    value: 0.1
+    source: literature_model
+
+  allowed_distances:
+    - 13
+    - 15
+    - 17
+    - 19
+    - 21
+    - 23
+    - 25
+    - 27
+    - 29
+    - 31
+
 factories:
   protocol:
     name: litinski_116_to_12_compact
