@@ -39,6 +39,18 @@ qec:
     value: 0.1
     source: literature_model
 
+  allowed_distances:
+    - 13
+    - 15
+    - 17
+    - 19
+    - 21
+    - 23
+    - 25
+    - 27
+    - 29
+    - 31
+
 factories:
   type: magic_state_T
   protocol:
@@ -89,6 +101,23 @@ m17_floorplanner:
     require_isolated_endpoint: true
     require_shared_trunk_endpoint: true
     m16_evaluation_required_before_architecture_claim: true
+
+optimizer:
+  method: deterministic_beam_search_v1
+  objective: topology_diverse_floorplan_co_design
+
+  constraints:
+    preserve_topology_diversity: true
+    require_m16_evaluation_before_architecture_claim: true
+
+  pareto_metrics:
+    - physical_qubits
+    - blocked_time
+    - suppressed_factory_events
+    - max_network_states
+    - starvation_probability
+    - wall_clock_seconds
+    - space_time_volume
 
 outputs:
   save_candidate_specs_json: true
