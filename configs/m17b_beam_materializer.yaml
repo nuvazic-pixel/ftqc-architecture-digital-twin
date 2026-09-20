@@ -1,0 +1,140 @@
+experiment:
+  name: m17b_beam_materializer_m16_evaluation
+  version: "0.1"
+
+workload:
+  logical_qubits: 100
+  t_count: 10000000
+
+hardware:
+  platform: superconducting_transmon
+
+  errors:
+    p_1q:
+      value: 1.0e-4
+      source: benchmark_assumption
+    p_2q:
+      value: 1.0e-3
+      source: protocol_reference_regime
+    p_measurement:
+      value: 1.0e-3
+      source: benchmark_assumption
+
+  timing_ns:
+    gate_1q: 25
+    gate_2q: 100
+    measurement: 500
+    code_cycle:
+      value: 1000
+      source: literature_benchmark_assumption
+
+qec:
+  target_logical_error: 1.0e-12
+
+  physical_error_threshold:
+    value: 1.0e-2
+    source: model_assumption
+
+  fit_A:
+    value: 0.1
+    source: literature_model
+
+  allowed_distances:
+    - 13
+    - 15
+    - 17
+    - 19
+    - 21
+    - 23
+    - 25
+    - 27
+    - 29
+    - 31
+
+factories:
+  type: magic_state_T
+
+  protocol:
+    name: litinski_116_to_12_compact
+    distillation_tiles: 44
+    output_states_per_batch: 12
+    protocol_steps_per_batch: 99
+    batch_success_probability: 0.89
+
+resource_model:
+  scope: m17b_deterministic_spatial_temporal_co_design
+
+  data_block_tiles: 153
+
+  shared_buffer:
+    base_capacity_states: 12
+    base_storage_tiles: 13
+    buffer_capacity_by_factory_count:
+      2: 48
+      3: 48
+      4: 96
+
+  tile_model:
+    physical_qubits_per_d2: 2.0
+
+m17_floorplanner:
+  engine: deterministic_diversity_beam_shared_route_astar_v1
+  phase: materialize_and_evaluate
+
+  factory_counts:
+    - 2
+    - 3
+    - 4
+
+  beam_width: 12
+  variants_per_degree: 3
+
+  corridor_sharing_degrees:
+    - 0.0
+    - 0.25
+    - 0.5
+    - 0.75
+    - 1.0
+
+  min_placement_radius_tiles: 8
+  max_placement_radius_tiles: 28
+  clearance_tiles: 1
+  search_margin_tiles: 36
+
+m16_evaluation:
+  success_mode: all_success_worst_case
+  phase_policy: even_staggered
+  event_count: 300
+
+  fixed_code_distance: 27
+  hop_latency_logical_steps: 4
+
+  injection_queue_capacity_states: 12
+  injection_bandwidth_states_per_tick: 12
+  intermediate_queue_capacity_states: 1
+  max_drain_factory_periods: 256
+
+  temporal_scope: deterministic_stress_horizon
+  starvation_probability_status: deferred_to_M18
+
+optimizer:
+  method: pareto_filter_after_diversity_beam
+  objective: spatial_temporal_co_design
+
+  constraints:
+    preserve_each_sharing_degree: true
+    weighted_single_score: false
+    fixed_code_distance_for_topology_isolation: true
+
+  pareto_metrics:
+    - physical_qubits
+    - blocked_time_seconds
+    - suppressed_factory_events
+    - max_network_states
+    - stress_wall_clock_seconds
+    - stress_space_time_volume
+
+outputs:
+  save_json: true
+  save_csv: true
+  save_pareto_plot: true

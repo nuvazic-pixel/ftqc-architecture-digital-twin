@@ -969,6 +969,115 @@ and retained by Pareto dominance.
 The current candidate generator is therefore a foundation milestone. It does
 not yet make architecture claims before M16 spatial/temporal evaluation.
 
+## Milestone 17B: diversity-preserving beam materializer + M16 evaluator
+
+M17B converts topology intents into actual spatial layouts and evaluates them
+through the finite-buffer backpressure network.
+
+### Beam materialization
+
+For each factory count, all 15 M17A topology intents enter one materialization
+beam.
+
+At each factory-placement step:
+
+```text
+partial layouts
+    -> generate radius/rotation-controlled anchors
+    -> biased obstacle-aware A* routing
+    -> cheap spatial metrics
+    -> diversity-preserving beam selection (K=12)
+```
+
+The selector first retains the best surviving state from every configured
+sharing degree and only then fills the remaining beam slots. This prevents a
+single topology family from collapsing the search before temporal evaluation.
+
+### Sharing-biased A*
+
+Corridor sharing is no longer only metadata.
+
+A new route receives a degree-dependent cost for reusing existing
+factory-route cells:
+
+```text
+low s   -> reuse is expensive; favor disjoint corridors
+high s  -> reuse is cheap; favor shared trunks
+```
+
+The route remains obstacle-aware and deterministic.
+
+### M16 temporal evaluation
+
+Every completed beam survivor is run through the existing finite-buffer,
+blocking-after-service network with:
+
+```text
+all-success structural load
+finite injection queue
+1-state intermediate queues
+persistent in-flight state
+blocking backpressure
+factory suppression
+```
+
+The M17B result therefore contains both spatial and temporal metrics.
+
+### No fake P(starve)
+
+M17B remains deterministic. The full persistent-network stochastic state has
+not yet been coupled to the whole-run factory-success process.
+
+Therefore:
+
+```text
+starvation_probability = null
+status = deferred_to_M18
+```
+
+M17B does not recycle the older event-local probability model into a state space
+where its assumptions no longer hold.
+
+### Current deterministic Pareto vector
+
+The M17B frontier minimizes:
+
+```text
+physical_qubits
+blocked_time_seconds
+suppressed_factory_events
+max_network_states
+stress_wall_clock_seconds
+stress_space_time_volume
+```
+
+No weighted aggregate score is used.
+
+### Corridor-sharing sweep artifact
+
+The experiment groups completed layouts by intended sharing degree and reports:
+
+```text
+minimum physical-qubit footprint
+minimum stress STV
+maximum achieved route-overlap fraction
+maximum number of shared route cells
+maximum blocked time
+maximum suppressed factory completions
+number of candidates that activate backpressure
+```
+
+It also reports the first sharing degree at which any surviving candidate
+activates finite-buffer backpressure.
+
+A dedicated plot writes:
+
+```text
+physical qubits  vs.  deterministic stress-horizon STV
+```
+
+with the Pareto points annotated by sharing degree.
+
 ## Scientific guardrails
 
 - Batch successes remain independent with constant p=0.89.
@@ -1055,4 +1164,7 @@ python -m experiments.finite_buffer_backpressure_stress \
 - [x] Persistent in-flight network-state / multi-event transport queue
 - [x] Finite node buffers / blocking backpressure
 - [ ] M17 beam-search global placement / routing co-design
+  - [x] candidate schema / topology-intent generator
+  - [ ] beam materializer + M16 deterministic evaluator
+  - [ ] corridor-sharing tipping-point lock
 - [ ] Adaptive / dynamic factory provisioning
