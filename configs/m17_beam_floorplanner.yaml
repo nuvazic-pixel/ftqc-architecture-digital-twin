@@ -1,0 +1,94 @@
+experiment:
+  name: m17_beam_floorplanner_candidate_generation
+  version: "0.1"
+
+workload:
+  logical_qubits: 100
+  t_count: 10000000
+
+hardware:
+  platform: superconducting_transmon
+
+  errors:
+    p_1q:
+      value: 1.0e-4
+      source: benchmark_assumption
+    p_2q:
+      value: 1.0e-3
+      source: protocol_reference_regime
+    p_measurement:
+      value: 1.0e-3
+      source: benchmark_assumption
+
+  timing_ns:
+    gate_1q: 25
+    gate_2q: 100
+    measurement: 500
+    code_cycle:
+      value: 1000
+      source: literature_benchmark_assumption
+
+qec:
+  target_logical_error: 1.0e-12
+
+  physical_error_threshold:
+    value: 1.0e-2
+    source: model_assumption
+
+  fit_A:
+    value: 0.1
+    source: literature_model
+
+factories:
+  type: magic_state_T
+  protocol:
+    name: litinski_116_to_12_compact
+    distillation_tiles: 44
+    output_states_per_batch: 12
+    protocol_steps_per_batch: 99
+    batch_success_probability: 0.89
+
+resource_model:
+  scope: m17_topology_candidate_generation
+
+m17_floorplanner:
+  engine: deterministic_beam_search_v1
+  phase: candidate_schema_and_topology_generator
+
+  factory_counts:
+    - 2
+    - 3
+    - 4
+
+  beam_width: 12
+  variants_per_degree: 3
+
+  corridor_sharing_degrees:
+    - 0.0
+    - 0.25
+    - 0.5
+    - 0.75
+    - 1.0
+
+  min_placement_radius_tiles: 8
+  max_placement_radius_tiles: 28
+  clearance_tiles: 1
+
+  future_full_score:
+    - physical_qubits
+    - blocked_time
+    - suppressed_factory_events
+    - max_network_states
+    - starvation_probability
+    - wall_clock_seconds
+    - space_time_volume
+
+  guardrails:
+    weighted_single_score: false
+    preserve_topology_diversity: true
+    require_isolated_endpoint: true
+    require_shared_trunk_endpoint: true
+    m16_evaluation_required_before_architecture_claim: true
+
+outputs:
+  save_candidate_specs_json: true
