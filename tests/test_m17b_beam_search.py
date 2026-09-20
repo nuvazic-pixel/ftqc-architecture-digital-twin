@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -137,50 +136,57 @@ def test_outputs_and_pareto_plot_are_machine_readable(
         assert output.stat().st_size > 1000
 
 
-def test_discover_corridor_sharing_tipping_profile(
+def test_corridor_sharing_tipping_profile_is_locked(
     result: dict[str, object],
 ):
-    raise AssertionError(
-        json.dumps(
-            {
-                "tipping": result[
-                    "first_backpressure_sharing_degree"
-                ],
-                "sweep": result["corridor_sharing_sweep"],
-                "frontier": [
-                    {
-                        "candidate_id": row["candidate_id"],
-                        "factory_count": row["factory_count"],
-                        "s": row["corridor_sharing_degree"],
-                        "overlap": row[
-                            "actual_route_overlap_fraction"
-                        ],
-                        "shared_cells": row[
-                            "shared_factory_route_cells"
-                        ],
-                        "physical_qubits": row[
-                            "physical_qubits"
-                        ],
-                        "blocked_s": row[
-                            "blocked_time_seconds"
-                        ],
-                        "suppressed": row[
-                            "suppressed_factory_events"
-                        ],
-                        "qmax": row[
-                            "max_network_states"
-                        ],
-                        "wall_s": row[
-                            "stress_wall_clock_seconds"
-                        ],
-                        "stv": row[
-                            "stress_space_time_volume"
-                        ],
-                    }
-                    for row in result["pareto_frontier"]
-                ],
-            },
-            indent=2,
-            sort_keys=True,
-        )
+    assert result["pareto_candidate_count"] == 7
+    assert result["first_backpressure_sharing_degree"] == 1.0
+    assert result["first_backpressure_bracket"] == {
+        "last_sample_without_backpressure": 0.75,
+        "first_sample_with_backpressure": 1.0,
+    }
+
+    sweep = {
+        float(row["corridor_sharing_degree"]): row
+        for row in result["corridor_sharing_sweep"]
+    }
+
+    for degree in (0.0, 0.25, 0.5, 0.75):
+        assert sweep[degree]["backpressure_candidate_count"] == 0
+        assert sweep[degree]["max_shared_factory_route_cells"] == 0
+
+    assert sweep[1.0]["backpressure_candidate_count"] == 3
+    assert sweep[1.0]["max_shared_factory_route_cells"] == 16
+    assert sweep[1.0]["max_actual_route_overlap_fraction"] == pytest.approx(
+        4 / 9
+    )
+    assert sweep[1.0]["max_suppressed_factory_events"] == 0
+
+    frontier = {
+        (
+            int(row["factory_count"]),
+            float(row["corridor_sharing_degree"]),
+        ): row
+        for row in result["pareto_frontier"]
+    }
+
+    n2_shared = frontier[(2, 1.0)]
+    assert n2_shared["physical_qubits"] == 454_896
+    assert n2_shared["shared_factory_route_cells"] == 8
+    assert n2_shared["blocked_time_seconds"] == pytest.approx(
+        0.081243
+    )
+
+    n3_shared = frontier[(3, 1.0)]
+    assert n3_shared["physical_qubits"] == 530_712
+    assert n3_shared["shared_factory_route_cells"] == 8
+    assert n3_shared["blocked_time_seconds"] == pytest.approx(
+        0.013689
+    )
+
+    n4_shared = frontier[(4, 1.0)]
+    assert n4_shared["physical_qubits"] == 689_634
+    assert n4_shared["shared_factory_route_cells"] == 16
+    assert n4_shared["blocked_time_seconds"] == pytest.approx(
+        0.016443
     )
