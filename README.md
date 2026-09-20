@@ -891,6 +891,84 @@ admission is coupled into the network.
 That makes route-sharing-aware global placement a higher-value next step than
 arbitrarily shrinking queue capacity further.
 
+## Milestone 17: beam-search floorplanning — candidate engine foundation
+
+M17 begins by separating **topology intent** from expensive spatial/temporal
+evaluation.
+
+The new candidate schema makes corridor sharing an explicit architecture
+variable rather than an accidental side-effect of one greedy floorplan.
+
+### Layout candidate structure
+
+Each M17 candidate currently records:
+
+```text
+candidate_id
+factory_count
+corridor_sharing_degree
+topology_class
+placement_radius_tiles
+clearance_tiles
+shared_trunk_bias
+route_overlap_target_fraction
+anchor_rotation_index
+generator_version
+```
+
+`corridor_sharing_degree` is normalized to `[0, 1]`:
+
+```text
+0.00 -> isolated
+0.25 -> low-share
+0.50 -> balanced
+0.75 -> high-share
+1.00 -> shared-trunk
+```
+
+Higher sharing also reduces the generated placement-radius target, deliberately
+biasing the future materializer toward more compact layouts.
+
+### Diversity before optimization
+
+The first configured M17 grid covers:
+
+```text
+factory counts:       N2, N3, N4
+sharing degrees:      0, .25, .50, .75, 1
+variants per degree:  3
+beam width:           12
+```
+
+This generates 45 deterministic topology intents before expensive evaluation.
+
+The beam width is deliberately **not** used to delete topology classes at this
+stage. It will apply during partial-layout materialization, while the generator
+preserves both isolated and shared-trunk endpoints.
+
+### Planned full M17 score vector
+
+No weighted scalar score is introduced.
+
+Completed layouts will be evaluated through M16 using the vector:
+
+```text
+(
+  physical_qubits,
+  blocked_time,
+  suppressed_factory_events,
+  max_network_states,
+  starvation_probability,
+  wall_clock_seconds,
+  space_time_volume
+)
+```
+
+and retained by Pareto dominance.
+
+The current candidate generator is therefore a foundation milestone. It does
+not yet make architecture claims before M16 spatial/temporal evaluation.
+
 ## Scientific guardrails
 
 - Batch successes remain independent with constant p=0.89.
@@ -976,5 +1054,5 @@ python -m experiments.finite_buffer_backpressure_stress \
 - [x] Finite-capacity interconnect + transport latency
 - [x] Persistent in-flight network-state / multi-event transport queue
 - [x] Finite node buffers / blocking backpressure
-- [ ] Global placement optimization
+- [ ] M17 beam-search global placement / routing co-design
 - [ ] Adaptive / dynamic factory provisioning
