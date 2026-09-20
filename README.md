@@ -969,6 +969,194 @@ and retained by Pareto dominance.
 The current candidate generator is therefore a foundation milestone. It does
 not yet make architecture claims before M16 spatial/temporal evaluation.
 
+## Milestone 17B: diversity-preserving beam materializer + M16 evaluator
+
+M17B converts topology intents into actual spatial layouts and evaluates them
+through the finite-buffer backpressure network.
+
+### Beam materialization
+
+For each factory count, all 15 M17A topology intents enter one materialization
+beam.
+
+At each factory-placement step:
+
+```text
+partial layouts
+    -> generate radius/rotation-controlled anchors
+    -> biased obstacle-aware A* routing
+    -> cheap spatial metrics
+    -> diversity-preserving beam selection (K=12)
+```
+
+The selector first retains the best surviving state from every configured
+sharing degree and only then fills the remaining beam slots. This prevents a
+single topology family from collapsing the search before temporal evaluation.
+
+### Sharing-biased A*
+
+Corridor sharing is no longer only metadata.
+
+A new route receives a degree-dependent cost for reusing existing
+factory-route cells:
+
+```text
+low s   -> reuse is expensive; favor disjoint corridors
+high s  -> reuse is cheap; favor shared trunks
+```
+
+The route remains obstacle-aware and deterministic.
+
+### M16 temporal evaluation
+
+Every completed beam survivor is run through the existing finite-buffer,
+blocking-after-service network with:
+
+```text
+all-success structural load
+finite injection queue
+1-state intermediate queues
+persistent in-flight state
+blocking backpressure
+factory suppression
+```
+
+The M17B result therefore contains both spatial and temporal metrics.
+
+### No fake P(starve)
+
+M17B remains deterministic. The full persistent-network stochastic state has
+not yet been coupled to the whole-run factory-success process.
+
+Therefore:
+
+```text
+starvation_probability = null
+status = deferred_to_M18
+```
+
+M17B does not recycle the older event-local probability model into a state space
+where its assumptions no longer hold.
+
+### Current deterministic Pareto vector
+
+The M17B frontier minimizes:
+
+```text
+physical_qubits
+blocked_time_seconds
+suppressed_factory_events
+max_network_states
+stress_wall_clock_seconds
+stress_space_time_volume
+```
+
+No weighted aggregate score is used.
+
+### Corridor-sharing sweep artifact
+
+The experiment groups completed layouts by intended sharing degree and reports:
+
+```text
+minimum physical-qubit footprint
+minimum stress STV
+maximum achieved route-overlap fraction
+maximum number of shared route cells
+maximum blocked time
+maximum suppressed factory completions
+number of candidates that activate backpressure
+```
+
+It also reports the first sharing degree at which any surviving candidate
+activates finite-buffer backpressure.
+
+A dedicated plot writes:
+
+```text
+physical qubits  vs.  deterministic stress-horizon STV
+```
+
+with the Pareto points annotated by sharing degree.
+
+### First M17B result: sampled congestion onset is between s=0.75 and s=1.00
+
+The 120-event deterministic stress sweep materializes 36 beam survivors and
+produces a 7-point Pareto frontier.
+
+For the sampled sharing grid:
+
+```text
+s       shared route cells   candidates with backpressure
+0.00          0                         0
+0.25          0                         0
+0.50          0                         0
+0.75          0                         0
+1.00         up to 16                   3
+```
+
+So the first **sampled** backpressure activation occurs at `s=1.00`.
+
+Because the grid is coarse, this is not claimed as an exact continuous tipping
+point. The current bracket is:
+
+```text
+0.75 < s_tipping <= 1.00
+```
+
+M17C should refine that interval with a denser corridor-sharing sweep.
+
+The shared-trunk Pareto representatives are:
+
+```text
+N2 / s=1.00
+  physical qubits       454,896
+  shared route cells          8
+  achieved overlap       0.4444
+  blocked time           0.081243 s
+
+N3 / s=1.00
+  physical qubits       530,712
+  shared route cells          8
+  achieved overlap       0.3077
+  blocked time           0.013689 s
+
+N4 / s=1.00
+  physical qubits       689,634
+  shared route cells         16
+  achieved overlap       0.4103
+  blocked time           0.016443 s
+```
+
+No nominal factory completion is suppressed anywhere in this 120-event grid.
+
+### Spatial saving appears before temporal reversal
+
+Compared with the corresponding `s=0.75` Pareto layouts, the `s=1.00`
+shared-trunk layouts reduce the fixed-d physical-qubit footprint by:
+
+```text
+N2: 11,664 qubits  (2.50%)
+N3: 20,412 qubits  (3.70%)
+N4: 42,282 qubits  (5.78%)
+```
+
+Despite measurable blocking, their deterministic stress-horizon STV is also
+lower in this sampled benchmark.
+
+Therefore M17B has found the **onset of congestion**, but not yet the point where
+congestion reverses the space-time benefit.
+
+That distinction is important:
+
+```text
+first backpressure
+      !=
+space-time tipping point
+```
+
+The next corridor-sharing refinement should search inside `(0.75, 1.00]` and
+increase transport pressure until the first actual Pareto reversal is located.
+
 ## Scientific guardrails
 
 - Batch successes remain independent with constant p=0.89.
@@ -989,8 +1177,14 @@ not yet make architecture claims before M16 spatial/temporal evaluation.
   test, not a run-level probability estimate.
 - Finite intermediate queue capacity is now modeled, but destination-buffer
   admission/backpressure is not yet coupled into the persistent network.
-- The current real floorplans have no shared factory-route cells; the
-  shared-bottleneck backpressure test is explicitly synthetic.
+- The original M16 greedy reference floorplans had no shared factory-route
+  cells; M17B now creates shared-route candidates deliberately through an
+  explicit topology-intent variable.
+- M17B physical-qubit and STV comparisons use a fixed code distance (d=27) to
+  isolate topology effects; reliability-aware distance reselection is deferred
+  until the stochastic whole-run coupling.
+- The reported M17B tipping point is sampled on a coarse sharing grid and is
+  therefore a bracket, not a continuous optimum.
 
 ## Quick start
 
@@ -1036,6 +1230,18 @@ python -m experiments.inflight_network_stress \
 python -m experiments.finite_buffer_backpressure_stress \
   --config configs/litinski_finite_buffer_backpressure_stress.yaml \
   --output-dir results/finite_buffer_backpressure
+
+python -m experiments.m17_candidate_generation \
+  --config configs/m17_beam_floorplanner.yaml \
+  --output results/m17/candidate_specs.json
+
+python -m experiments.m17b_beam_search \
+  --config configs/m17b_beam_materializer.yaml \
+  --output-dir results/m17b
+
+python -m experiments.plot_m17b_pareto \
+  --config configs/m17b_beam_materializer.yaml \
+  --output results/m17b/pareto_nphys_vs_stv.png
 ```
 
 ## Milestones
@@ -1055,4 +1261,8 @@ python -m experiments.finite_buffer_backpressure_stress \
 - [x] Persistent in-flight network-state / multi-event transport queue
 - [x] Finite node buffers / blocking backpressure
 - [ ] M17 beam-search global placement / routing co-design
+  - [x] candidate schema / topology-intent generator
+  - [x] beam materializer + M16 deterministic evaluator
+  - [x] coarse corridor-sharing backpressure bracket
+  - [ ] refined space-time tipping-point sweep
 - [ ] Adaptive / dynamic factory provisioning
