@@ -1,0 +1,127 @@
+experiment:
+  name: m17_beam_layout_search
+  version: "0.1"
+
+workload:
+  logical_qubits: 100
+  t_count: 10000000
+
+hardware:
+  platform: superconducting_transmon
+
+  errors:
+    p_1q:
+      value: 1.0e-4
+      source: benchmark_assumption
+    p_2q:
+      value: 1.0e-3
+      source: protocol_reference_regime
+    p_measurement:
+      value: 1.0e-3
+      source: benchmark_assumption
+
+qec:
+  target_logical_error: 1.0e-12
+
+  physical_error_threshold:
+    value: 1.0e-2
+    source: model_assumption
+
+  fit_A:
+    value: 0.1
+    source: literature_model
+
+  allowed_distances:
+    - 13
+    - 15
+    - 17
+    - 19
+    - 21
+    - 23
+    - 25
+    - 27
+    - 29
+    - 31
+
+factories:
+  protocol:
+    name: litinski_116_to_12_compact
+    distillation_tiles: 44
+    output_states_per_batch: 12
+    protocol_steps_per_batch: 99
+
+resource_model:
+  data_block:
+    tiles:
+      value: 153
+      source: literature
+
+  shared_buffer:
+    base_capacity_states: 12
+    base_storage_tiles: 13
+    scaling_model: linear_block_replication
+    source: model_assumption
+
+m17_layout_search:
+  model: deterministic_beam_search_weighted_astar_v1
+  source: model_assumption
+
+  beam_width: 10
+  final_candidates_per_target: 3
+  clearance_tiles: 1
+  search_margin_tiles: 24
+
+  sharing_targets:
+    - 0.0
+    - 0.5
+    - 1.0
+
+  scenarios:
+    - name: N2_B048
+      factory_count: 2
+      buffer_capacity_states: 48
+      phase_policy: even_staggered
+      hop_latency_logical_steps: 4
+
+    - name: N3_B048
+      factory_count: 3
+      buffer_capacity_states: 48
+      phase_policy: even_staggered
+      hop_latency_logical_steps: 4
+
+    - name: N4_B096
+      factory_count: 4
+      buffer_capacity_states: 96
+      phase_policy: even_staggered
+      hop_latency_logical_steps: 4
+
+  stress:
+    event_count: 300
+    injection_queue_capacity_states: 12
+    injection_bandwidth_states_per_tick: 12
+    intermediate_queue_capacity_states: 1
+    max_drain_factory_periods: 64
+
+  pareto_objectives:
+    - metric: factory_route_union_tiles
+      direction: min
+    - metric: blocked_after_service_ticks
+      direction: min
+    - metric: suppressed_factory_events
+      direction: min
+    - metric: max_network_states
+      direction: min
+
+  note: >
+    This first M17 engine slice searches physical layout/routing candidates and
+    evaluates them with the deterministic M16 finite-buffer network. It does
+    not yet reconnect stochastic factory success or whole-run starvation risk.
+
+optimizer:
+  method: deterministic_beam_search
+  objective: spatial_temporal_layout_candidate_generation
+
+outputs:
+  save_candidates_csv: true
+  save_pareto_csv: true
+  save_json: true

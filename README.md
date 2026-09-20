@@ -891,6 +891,172 @@ admission is coupled into the network.
 That makes route-sharing-aware global placement a higher-value next step than
 arbitrarily shrinking queue capacity further.
 
+## Milestone 17 v0.1: beam-search layout candidate engine
+
+The first practical M17 slice replaces the single greedy placement trajectory
+with a deterministic beam search.
+
+### Layout candidate data model
+
+Every candidate now carries both geometry and transport-facing metrics:
+
+```text
+factory placements
+factory-route union tiles
+route-incidence tiles
+shared factory-route cells
+maximum route multiplicity
+corridor-sharing fraction
+max / mean factory path length
+floorplan bounding-box area
+active tile count
+```
+
+The sharing fraction is:
+
+```text
+1 - route_union_tiles / route_incidence_tiles
+```
+
+so 0 means no factory-factory corridor reuse and larger values mean more route
+incidence is being collapsed onto common physical cells.
+
+### Adjustable corridor-sharing search
+
+The weighted A* routing policy exposes an explicit `sharing_target`:
+
+```text
+0.0 -> discourage reuse when alternatives exist
+0.5 -> balanced
+1.0 -> strongly prefer existing factory corridors
+```
+
+At each placement step the beam keeps K partial layouts instead of committing
+to one greedy branch.
+
+The cheap beam score uses:
+
+```text
+distance from requested sharing target
+route-union tiles
+bounding-box area
+maximum path length
+maximum route multiplicity
+deterministic geometry tie-break
+```
+
+The weighted A* heuristic is scaled by the cheapest possible step cost so it
+remains admissible even when shared corridor cells are deliberately discounted.
+
+### First spatial-temporal sweep
+
+The initial search evaluates 27 layouts:
+
+```text
+N2 / B48
+N3 / B48
+N4 / B96
+
+x sharing target 0.0 / 0.5 / 1.0
+x 3 final beam candidates per target
+```
+
+Every candidate is passed through the M16 finite-buffer/backpressure simulator.
+
+A first result is already important: **forcing maximum corridor sharing is not
+automatically a space saving under the current unrestricted buffer-perimeter
+model.**
+
+Representative R01 candidates:
+
+```text
+N2 / sharing 0.0
+  route union              2 tiles
+  shared cells             0
+  blocked ticks            0
+  suppressed factories     0
+
+N2 / sharing 1.0
+  achieved sharing         ~0.2353
+  route union             13 tiles
+  shared cells             4
+  blocked ticks       11,622
+  suppressed factories     0
+
+N3 / sharing 1.0
+  achieved sharing         ~0.4595
+  shared cells            13
+  max multiplicity         3
+  blocked ticks      223,782
+  suppressed factories    88
+
+N4 / sharing 1.0
+  achieved sharing         ~0.5802
+  shared cells            28
+  max multiplicity         4
+  blocked ticks      407,824
+  suppressed factories   132
+```
+
+So the current generator has successfully produced the missing congestion
+regime, but the extreme shared layouts are dominated: they obtain sharing by
+taking longer detours and therefore lose both spatially and temporally.
+
+This is a useful model result rather than something to hide:
+
+```text
+corridor reuse
+        !=
+routing-tile savings
+```
+
+unless the physical interface / placement constraints make separate routes
+expensive in the first place.
+
+### Pareto comparison is scenario-scoped
+
+M17 does not compare N2, N3, and N4 stress traces as if they had identical
+service capacity.
+
+Pareto dominance is computed separately inside:
+
+```text
+N2_B048
+N3_B048
+N4_B096
+```
+
+because the current deterministic stress horizon is not yet an equal-work,
+whole-run stochastic comparison across factory counts.
+
+### What this tells us to add before M18
+
+The present buffer has a large freely accessible perimeter, so factories can
+often sit directly beside it with one-cell disjoint routes. Under that geometry,
+there is little legitimate spatial incentive to create a shared trunk.
+
+The next M17 refinement should therefore make the interface constraint explicit,
+for example:
+
+```text
+limited shared-buffer ingress ports
+or
+a compact-placement / maximum-footprint constraint
+```
+
+Then the corridor-sharing sweep can answer the intended question:
+
+```text
+routing tiles saved
+versus
+backpressure / factory suppression / runtime penalty
+```
+
+without rewarding artificial detours.
+
+The stochastic whole-run M18 coupling should be built on those physically
+comparable M17 layouts, not on forced sharing for its own sake.
+
 ## Scientific guardrails
 
 - Batch successes remain independent with constant p=0.89.
@@ -958,6 +1124,10 @@ python -m experiments.inflight_network_stress \
 python -m experiments.finite_buffer_backpressure_stress \
   --config configs/litinski_finite_buffer_backpressure_stress.yaml \
   --output-dir results/finite_buffer_backpressure
+
+python -m experiments.m17_beam_layout_search \
+  --config configs/litinski_m17_beam_layout_search.yaml \
+  --output-dir results/m17_layout_search
 ```
 
 ## Milestones
@@ -976,5 +1146,7 @@ python -m experiments.finite_buffer_backpressure_stress \
 - [x] Finite-capacity interconnect + transport latency
 - [x] Persistent in-flight network-state / multi-event transport queue
 - [x] Finite node buffers / blocking backpressure
-- [ ] Global placement optimization
+- [x] M17 beam-search layout candidate engine
+- [ ] M17 constrained ingress / compact corridor-sharing Pareto sweep
+- [ ] M18 stochastic whole-run network coupling
 - [ ] Adaptive / dynamic factory provisioning
