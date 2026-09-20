@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -127,35 +126,70 @@ def test_outputs_are_machine_readable(
         assert output.stat().st_size > 0
 
 
-def test_discover_m17_corridor_sharing_profile(
+def test_m17_corridor_sharing_tradeoff_is_locked(
     search_result: dict[str, object],
 ):
-    profile = [
-        {
-            key: row[key]
-            for key in (
-                "scenario",
-                "candidate_id",
-                "sharing_target",
-                "sharing_fraction",
-                "factory_route_union_tiles",
-                "route_savings_vs_disjoint_incidence",
-                "shared_factory_route_cells",
-                "max_factory_route_multiplicity",
-                "max_factory_path_tiles",
-                "bbox_area_tiles",
-                "blocked_after_service_ticks",
-                "suppressed_factory_events",
-                "max_network_states",
-                "fraction_event_boundaries_with_carryover",
-                "mean_batch_latency_logical_steps",
-                "max_batch_latency_logical_steps",
-                "is_pareto",
-            )
-        }
+    rows = {
+        (row["scenario"], row["candidate_id"]): row
         for row in search_result["candidates"]
-    ]
+    }
 
-    raise AssertionError(
-        json.dumps(profile, indent=2, sort_keys=True)
+    n2_disjoint = rows[("N2_B048", "N2_S0.00_R01")]
+    n2_shared = rows[("N2_B048", "N2_S1.00_R01")]
+
+    assert n2_disjoint["sharing_fraction"] == 0.0
+    assert n2_disjoint["factory_route_union_tiles"] == 2
+    assert n2_disjoint["blocked_after_service_ticks"] == 0
+    assert n2_disjoint["suppressed_factory_events"] == 0
+
+    assert n2_shared["sharing_fraction"] == pytest.approx(
+        0.23529411764705888
     )
+    assert n2_shared["shared_factory_route_cells"] == 4
+    assert n2_shared["factory_route_union_tiles"] == 13
+    assert n2_shared["route_savings_vs_disjoint_incidence"] == 4
+    assert n2_shared["blocked_after_service_ticks"] == 11622
+    assert n2_shared["suppressed_factory_events"] == 0
+
+    n3_shared = rows[("N3_B048", "N3_S1.00_R01")]
+    assert n3_shared["sharing_fraction"] == pytest.approx(
+        0.45945945945945943
+    )
+    assert n3_shared["shared_factory_route_cells"] == 13
+    assert n3_shared["max_factory_route_multiplicity"] == 3
+    assert n3_shared["blocked_after_service_ticks"] == 223782
+    assert n3_shared["suppressed_factory_events"] == 88
+
+    n4_shared = rows[("N4_B096", "N4_S1.00_R01")]
+    assert n4_shared["sharing_fraction"] == pytest.approx(
+        0.5802469135802469
+    )
+    assert n4_shared["shared_factory_route_cells"] == 28
+    assert n4_shared["max_factory_route_multiplicity"] == 4
+    assert n4_shared["blocked_after_service_ticks"] == 407824
+    assert n4_shared["suppressed_factory_events"] == 132
+
+
+def test_m17_pareto_is_scoped_per_architecture_scenario(
+    search_result: dict[str, object],
+):
+    assert search_result["pareto_scope"] == "within_scenario_only"
+    assert set(search_result["pareto_counts_by_scenario"]) == {
+        "N2_B048",
+        "N3_B048",
+        "N4_B096",
+    }
+    assert all(
+        count > 0
+        for count in search_result["pareto_counts_by_scenario"].values()
+    )
+
+    # The intentionally over-shared R01 candidates are dominated inside each
+    # comparable scenario by shorter, non-congested layouts.
+    by_id = {
+        (row["scenario"], row["candidate_id"]): row
+        for row in search_result["candidates"]
+    }
+    assert by_id[("N2_B048", "N2_S1.00_R01")]["is_pareto"] is False
+    assert by_id[("N3_B048", "N3_S1.00_R01")]["is_pareto"] is False
+    assert by_id[("N4_B096", "N4_S1.00_R01")]["is_pareto"] is False
