@@ -371,13 +371,32 @@ def run(config_path: str) -> dict[str, object]:
         annotated.append(item)
 
     sweep = _sharing_sweep(annotated)
-    tipping = next(
+    tipping_index = next(
         (
-            item["corridor_sharing_degree"]
-            for item in sweep
+            index
+            for index, item in enumerate(sweep)
             if int(item["backpressure_candidate_count"]) > 0
         ),
         None,
+    )
+    tipping = (
+        None
+        if tipping_index is None
+        else sweep[tipping_index]["corridor_sharing_degree"]
+    )
+    tipping_bracket = (
+        None
+        if tipping_index is None
+        else {
+            "last_sample_without_backpressure": (
+                None
+                if tipping_index == 0
+                else sweep[tipping_index - 1][
+                    "corridor_sharing_degree"
+                ]
+            ),
+            "first_sample_with_backpressure": tipping,
+        }
     )
 
     return {
@@ -405,6 +424,7 @@ def run(config_path: str) -> dict[str, object]:
         ),
         "corridor_sharing_sweep": sweep,
         "first_backpressure_sharing_degree": tipping,
+        "first_backpressure_bracket": tipping_bracket,
         "starvation_probability_status": (
             config["m16_evaluation"][
                 "starvation_probability_status"
