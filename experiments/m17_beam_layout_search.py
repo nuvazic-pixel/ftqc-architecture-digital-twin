@@ -272,47 +272,75 @@ def run(config_path: str) -> dict[str, object]:
         )
         for spec in search["pareto_objectives"]
     )
-    frontier, dominated = pareto_partition(
-        rows,
-        objectives,
-    )
-    frontier_ids = {
-        str(row["candidate_id"])
-        + "|"
-        + str(row["scenario"])
-        for row in frontier
-    }
-    dominated_by = {
-        str(row["candidate_id"])
-        + "|"
-        + str(row["scenario"]): row[
-            "dominated_by"
-        ]
-        for row in dominated
-    }
-
+    # Compare layouts only within the same architecture scenario. A 2-factory
+    # stress trace and a 4-factory stress trace do not represent equal temporal
+    # service capacity, so cross-scenario Pareto dominance would be misleading.
     enriched: list[dict[str, object]] = []
-    for row in rows:
-        key = (
+    frontier: list[dict[str, object]] = []
+    pareto_counts_by_scenario: dict[str, int] = {}
+
+    scenarios = sorted(
+        {str(row["scenario"]) for row in rows}
+    )
+    for scenario_name in scenarios:
+        scenario_rows = [
+            row
+            for row in rows
+            if str(row["scenario"]) == scenario_name
+        ]
+        scenario_frontier, dominated = pareto_partition(
+            scenario_rows,
+            objectives,
+        )
+        frontier_ids = {
             str(row["candidate_id"])
-            + "|"
-            + str(row["scenario"])
+            for row in scenario_frontier
+        }
+        dominated_by = {
+            str(row["candidate_id"]): row["dominated_by"]
+            for row in dominated
+        }
+
+        pareto_counts_by_scenario[scenario_name] = len(
+            scenario_frontier
         )
-        item = dict(row)
-        item["is_pareto"] = (
-            key in frontier_ids
+        frontier.extend(scenario_frontier)
+
+        for row in scenario_rows:
+            candidate_id = str(row["candidate_id"])
+            item = dict(row)
+            item["is_pareto"] = candidate_id in frontier_ids
+            item["dominated_by"] = dominated_by.get(
+                candidate_id,
+                [],
+            )
+            enriched.append(item)
+
+    enriched.sort(
+        key=lambda row: (
+            str(row["scenario"]),
+            float(row["sharing_target"]),
+            str(row["candidate_id"]),
         )
-        item["dominated_by"] = (
-            dominated_by.get(key, [])
+    )
+    frontier.sort(
+        key=lambda row: (
+            str(row["scenario"]),
+            int(row["factory_route_union_tiles"]),
+            int(row["blocked_after_service_ticks"]),
+            int(row["suppressed_factory_events"]),
+            int(row["max_network_states"]),
         )
-        enriched.append(item)
+    )
 
     return {
         "scope": "m17_beam_layout_search",
         "model": search["model"],
         "source": search["source"],
+        "pareto_scope": "within_scenario_only",
         "candidate_count": len(enriched),
         "pareto_candidate_count": len(frontier),
+        "pareto_counts_by_scenario": pareto_counts_by_scenario,
         "objectives": [
             {
                 "metric": objective.metric,
