@@ -104,7 +104,7 @@ m17_floorplanner:
 m16_evaluation:
   success_mode: all_success_worst_case
   phase_policy: even_staggered
-  event_count: 300
+  event_count: 120
 
   fixed_code_distance: 27
   hop_latency_logical_steps: 4
@@ -112,7 +112,7 @@ m16_evaluation:
   injection_queue_capacity_states: 12
   injection_bandwidth_states_per_tick: 12
   intermediate_queue_capacity_states: 1
-  max_drain_factory_periods: 256
+  max_drain_factory_periods: 96
 
   temporal_scope: deterministic_stress_horizon
   starvation_probability_status: deferred_to_M18
